@@ -1,0 +1,14 @@
+source_id: school-forms-001
+title: "Danh mục biểu mẫu (placeholder)"
+version: "1.0"
+effective_date: "2026-01-01"
+issuing_unit: "Phòng Đào tạo"
+document_type: form
+access_scope: public
+entries:
+  - text: "Đơn xin bảo lưu kết quả học tập: mẫu BM-01, nộp tại Phòng Đào tạo."
+    keywords: [bảo lưu, đơn, biểu mẫu, mẫu]
+    form_code: BM-01
+  - text: "Đơn xin cấp bảng điểm: mẫu BM-05, đăng ký online hoặc tại phòng 105 tòa B."
+    keywords: [bảng điểm, cấp, đơn, mẫu]
+    form_code: BM-05

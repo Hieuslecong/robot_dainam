@@ -1,0 +1,19 @@
+{
+  "name": "robot-ai-host-browser-client",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@pipecat-ai/client-js": "1.12.0",
+    "@pipecat-ai/small-webrtc-transport": "1.10.5"
+  },
+  "devDependencies": {
+    "vite": "8.0.16"
+  }
+}

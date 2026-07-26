@@ -1,0 +1,14 @@
+source_id: school-contacts-001
+title: "Danh bạ liên hệ (placeholder)"
+version: "1.0"
+effective_date: "2026-01-01"
+issuing_unit: "Phòng Hành chính"
+document_type: contact
+access_scope: public
+entries:
+  - text: "Phòng Đào tạo: điện thoại 024-0000-0001, email daotao@example.edu.vn."
+    keywords: [phòng đào tạo, điện thoại, email, liên hệ]
+    unit: "Phòng Đào tạo"
+  - text: "Phòng Công tác Sinh viên: điện thoại 024-0000-0002, email ctsv@example.edu.vn."
+    keywords: [công tác sinh viên, ctsv, liên hệ]
+    unit: "Phòng Công tác Sinh viên"

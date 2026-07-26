@@ -1,0 +1,29 @@
+# Spec 8.1 — five STT candidate profiles for Vietnamese.
+# Single source for both the round-1 benchmark harness (benchmarks/stt/) and
+# runtime selection (STT_CANDIDATE env → app/config.py resolves engine+model).
+# No candidate becomes the runtime default until it passes gate 8.6.
+
+stt_fast_vi:
+  engine: mlx
+  model: mlx-community/whisper-large-v3-turbo-q4
+  role: fallback / low-RAM machines (current default)
+
+stt_balanced_vi:
+  engine: mlx
+  model: mlx-community/whisper-large-v3-turbo-8bit
+  role: default candidate for Apple Silicon
+
+stt_accurate_vi:
+  engine: faster_whisper
+  model: diepho/PhoWhisper-medium-ct2
+  role: Vietnamese-specialized reference (PhoWhisper-medium, verified CT2 conversion)
+
+stt_research_vi:
+  engine: mlx
+  model: mlx-community/whisper-large-v3-8bit
+  role: high-accuracy comparison
+
+stt_streaming_vi:
+  engine: sherpa_onnx
+  model: csukuangfj/sherpa-onnx-zipformer-vi-int8-2025-04-20
+  role: latency candidate — near-instant speech-end→final; quality must be proven on corpus first

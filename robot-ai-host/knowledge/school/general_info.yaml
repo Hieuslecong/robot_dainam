@@ -1,0 +1,25 @@
+# Spec 12.2 — every document carries source metadata. Placeholder content:
+# replace with real school documents before production.
+source_id: school-general-001
+title: "Thông tin chung về trường (placeholder)"
+version: "1.0"
+effective_date: "2026-01-01"
+expiry_date: "2027-01-01"
+issuing_unit: "Phòng Hành chính"
+document_type: general
+access_scope: public
+entries:
+  - text: "Trường mở cửa từ 7 giờ đến 21 giờ các ngày trong tuần, thứ Bảy đến 17 giờ."
+    keywords: [giờ, mở cửa, thời gian]
+  - text: "Thư viện nằm ở tầng 3 tòa nhà A, mở cửa 8 giờ đến 20 giờ."
+    keywords: [thư viện, tầng, tòa nhà]
+  - text: "Phòng Đào tạo tiếp sinh viên tại phòng 105 tòa nhà B, sáng 8-11 giờ, chiều 14-16 giờ."
+    keywords: [phòng đào tạo, tiếp sinh viên, đăng ký]
+  - text: "Wifi sinh viên: mạng DNU-Student, đăng nhập bằng mã sinh viên, hướng dẫn tại quầy thư viện tầng 3 tòa A."
+    keywords: [wifi, mạng, internet, đăng nhập]
+  - text: "Ký túc xá nằm trong khuôn viên trường, đăng ký tại Phòng Công tác Sinh viên; ưu tiên sinh viên năm nhất và ở xa."
+    keywords: [ký túc xá, ktx, chỗ ở, đăng ký]
+  - text: "Xe buýt tuyến 33 và 21B dừng ngay cổng trường; bãi gửi xe sinh viên ở cổng sau, mở 6 giờ 30 đến 21 giờ 30."
+    keywords: [xe buýt, bus, gửi xe, bãi xe, đi lại]
+  - text: "Trạm y tế trường ở tầng 1 tòa nhà C, hoạt động giờ hành chính; sơ cứu miễn phí cho sinh viên."
+    keywords: [y tế, trạm y tế, ốm, sơ cứu, sức khỏe]

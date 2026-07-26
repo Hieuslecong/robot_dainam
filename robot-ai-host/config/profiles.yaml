@@ -1,0 +1,55 @@
+# Runtime profiles. Provider classes map to official Pipecat v1.6.0 services.
+mock:
+  name: mock
+  language: vi-VN
+  transport: webrtc
+  stt:
+    provider: mock
+    streaming: false
+  llm:
+    provider: mock
+    streaming: true
+  tts:
+    provider: mock
+    streaming: true
+    aggregation: sentence
+  turn:
+    vad: silero
+    smart_turn: false
+
+google_vi:
+  name: google_vi
+  language: vi-VN
+  transport: webrtc
+  stt:
+    provider: google
+    streaming: true
+  llm:
+    provider: openai_compatible
+    streaming: true
+  tts:
+    provider: google
+    streaming: true
+    aggregation: sentence
+  turn:
+    vad: silero
+    smart_turn: false
+
+hybrid_local_vi:
+  name: hybrid_local_vi
+  language: vi-VN
+  transport: webrtc
+  stt:
+    provider: whisper_local
+    streaming: false
+  llm:
+    provider: openai_compatible
+    streaming: true
+  tts:
+    provider: piper_http
+    streaming: true
+    voice: vi_VN-vais1000-medium
+    aggregation: sentence
+  turn:
+    vad: silero
+    smart_turn: false

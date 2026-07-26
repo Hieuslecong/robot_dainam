@@ -1,0 +1,4 @@
+# Local runtime evidence — not source
+artifacts/
+.claude/
+.DS_Store

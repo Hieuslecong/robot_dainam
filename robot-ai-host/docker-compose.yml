@@ -1,0 +1,11 @@
+services:
+  robot-ai-host:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts:/app/artifacts
+      # For google_vi, add a read-only credential mount and set the same container path in .env:
+      # - /absolute/path/service-account.json:/run/secrets/google.json:ro
+    restart: unless-stopped

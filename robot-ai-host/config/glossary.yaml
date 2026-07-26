@@ -1,0 +1,37 @@
+# Spec 8.3 — versioned Vietnamese school glossary for STT correction.
+# Entries map canonical term → list of common misrecognitions.
+# Corrections are applied only above the confidence threshold; every correction
+# is logged with original transcript, corrected transcript and confidence.
+version: 1
+updated: "2026-07-26"
+confidence_threshold: 0.8
+terms:
+  # tên trường (placeholder — thay bằng tên thật khi trường xác nhận)
+  "Đại học Đại Nam":
+    - "đại học đại nam"
+    - "đại học Đài Nam"
+    - "đại học đại nàm"
+  # khoa/phòng ban
+  "Phòng Đào tạo":
+    - "phòng đào tạo"
+    - "phòng đạo tạo"
+  "Phòng Công tác Sinh viên":
+    - "phòng công tác sinh viên"
+  "Khoa Công nghệ Thông tin":
+    - "khoa công nghệ thông tin"
+    - "khoa công nghệ thông tinh"
+  # thuật ngữ Việt–Anh
+  "học phần":
+    - "học phàn"
+  "tín chỉ":
+    - "tính chỉ"
+    - "tin chỉ"
+  "GPA":
+    - "gờ pê a"
+    - "gi pi ây"
+  "deadline":
+    - "đét lai"
+    - "đét line"
+  # viết tắt
+  "CTSV":
+    - "cê tê ét vê"

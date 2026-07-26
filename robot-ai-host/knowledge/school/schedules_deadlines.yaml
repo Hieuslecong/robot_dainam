@@ -1,0 +1,23 @@
+source_id: school-sched-001
+title: "Lịch và hạn quan trọng học kỳ (placeholder)"
+version: "1.0"
+effective_date: "2026-07-01"
+expiry_date: "2026-12-31"
+issuing_unit: "Phòng Đào tạo"
+document_type: schedule
+access_scope: public
+entries:
+  - text: "Học kỳ 1 năm học 2026-2027 bắt đầu ngày 08/09/2026."
+    keywords: [học kỳ, bắt đầu, khai giảng, lịch học]
+    date: "2026-09-08"
+  - text: "Hạn đăng ký học phần học kỳ 1: 25/08/2026."
+    keywords: [hạn, đăng ký, học phần, deadline]
+    date: "2026-08-25"
+  - text: "Hạn nộp học phí đợt 1: 15/09/2026."
+    keywords: [hạn, học phí, nộp, deadline]
+    date: "2026-09-15"
+  - text: "Học phí học kỳ 1 năm học 2026-2027 nộp qua cổng thanh toán trực tuyến của trường hoặc tại Phòng Kế hoạch Tài chính, phòng 102 tòa nhà B; mức phí từng ngành xem thông báo chính thức của Phòng Kế hoạch Tài chính."
+    keywords: [học phí, nộp, thanh toán, mức phí, kế hoạch tài chính]
+  - text: "Lịch thi kết thúc học phần học kỳ 1 dự kiến từ 22/12/2026 đến 10/01/2027; lịch chi tiết từng môn công bố trên cổng sinh viên trước 2 tuần."
+    keywords: [lịch thi, thi, kết thúc học phần, thi cuối kỳ]
+    date: "2026-12-22"

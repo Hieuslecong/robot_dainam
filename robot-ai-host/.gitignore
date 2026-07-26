@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+build/
+*.egg-info/
+.venv/
+.venv-hybrid/
+.venv-piper/
+venv/
+
+# Frontend
+clients/browser/node_modules/
+clients/browser/dist/
+
+# Environment/secrets
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*service-account*.json
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Runtime evidence / heavy artifacts
+logs/
+artifacts/
+snapshots/
+*.wav
+*.db
+models/
+.pytest_cache/
+.coverage
+htmlcov/

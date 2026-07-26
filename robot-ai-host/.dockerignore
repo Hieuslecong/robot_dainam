@@ -1,0 +1,13 @@
+.git
+.venv
+.venv-*
+__pycache__
+.pytest_cache
+clients/browser/node_modules
+clients/browser/dist
+artifacts
+models
+.env
+*.json
+*.zip
+vendor/pipecat-reference/.git
