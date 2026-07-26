@@ -37,6 +37,7 @@ from app.sessions import SessionManager, SessionState
 logger = get_logger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BROWSER_DIST_DIR = ROOT_DIR / "clients" / "browser" / "dist"
+ROBOT_DIST_DIR = ROOT_DIR / "clients" / "desktop_robot_emulator" / "dist"
 
 
 class DeviceRegisterRequest(BaseModel):
@@ -182,6 +183,8 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     register_routes(app)
     if BROWSER_DIST_DIR.is_dir():
         app.mount("/client", StaticFiles(directory=BROWSER_DIST_DIR, html=True), name="client")
+    if ROBOT_DIST_DIR.is_dir():
+        app.mount("/robot", StaticFiles(directory=ROBOT_DIST_DIR, html=True), name="robot")
     return app
 
 
@@ -405,6 +408,7 @@ def register_routes(app: FastAPI) -> None:
                     transport=transport,
                     settings=settings,
                     tracker=tracker,
+                    auto_intro=True,
                 )
                 manager.register_worker(session_id, worker, runner, bundle)
                 await manager.activate_session(session_id)
@@ -766,7 +770,15 @@ def main() -> None:
         values["default_profile"] = args.profile
     runtime_settings = Settings(**values)
     runtime_app = create_app(runtime_settings)
-    uvicorn.run(runtime_app, host=runtime_settings.host, port=runtime_settings.port)
+    ssl_kwargs = {}
+    cert, key = runtime_settings.ssl_certfile, runtime_settings.ssl_keyfile
+    if cert and key and Path(cert).exists() and Path(key).exists():
+        ssl_kwargs = {"ssl_certfile": cert, "ssl_keyfile": key}
+    elif cert or key:
+        logger.warning("ssl_files_missing_falling_back_to_http", certfile=cert, keyfile=key)
+    uvicorn.run(
+        runtime_app, host=runtime_settings.host, port=runtime_settings.port, **ssl_kwargs
+    )
 
 
 if __name__ == "__main__":

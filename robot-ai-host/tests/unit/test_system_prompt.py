@@ -34,6 +34,20 @@ def test_persona_style_rules_present():
     assert "không giả là con người" in prompt.lower()
 
 
+def test_model_name_never_leaks_into_prompt():
+    # Robot must not reveal the core model in conversation; the builder must
+    # not embed it even when callers pass it in.
+    prompt = build_system_prompt(persona_name="Test", llm_model="gemini-2.5-flash")
+    assert "gemini" not in prompt.lower()
+    assert "không tiết lộ model" in prompt.lower()
+
+
+def test_face_commands_are_affirmed_not_refused():
+    prompt = build_system_prompt(persona_name="Test")
+    assert "khuôn mặt" in prompt.lower()
+    assert "làm mặt buồn" in prompt.lower()
+
+
 def test_prompt_within_token_budget():
     """Spec 9.7: core persona/safety 500–800 tokens. Vietnamese ~1.5 token/word
     heuristic; assert a generous word ceiling instead of exact tokens."""

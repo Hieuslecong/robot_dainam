@@ -25,6 +25,7 @@ from app.processors.context_compactor import ContextCompactor
 from app.processors.stt_guard import STTGuard
 from app.processors.stream_deduplicator import StreamDeduplicator
 from app.processors.response_policy import ResponsePolicyProcessor
+from app.processors.small_talk_bypass import SmallTalkBypassProcessor
 from app.processors.turn_grounding import TurnGroundingProcessor
 
 logger = get_logger(__name__)
@@ -227,6 +228,9 @@ def _create_google_vi_pipeline(
     wake_gate = _build_wake_gate(settings, on_idle=None)
     manager, compactor = _build_context_guard(context, settings)
     grounding = TurnGroundingProcessor(context, name="TurnGrounding")
+    small_talk = SmallTalkBypassProcessor(
+        context, persona_name=settings.persona_name, name="SmallTalkBypass"
+    )
     dedup = StreamDeduplicator(name="StreamDedup")
     resp_policy = ResponsePolicyProcessor(
         max_sentences=settings.response_max_sentences,
@@ -244,6 +248,7 @@ def _create_google_vi_pipeline(
                 user_aggregator,
                 compactor,
                 grounding,
+                small_talk,
                 llm,
                 dedup,
                 resp_policy,
@@ -438,6 +443,9 @@ def _assemble_hybrid_bundle(
     wake_gate = _build_wake_gate(settings, on_idle=None)
     manager, compactor = _build_context_guard(context, settings)
     grounding = TurnGroundingProcessor(context, name="TurnGrounding")
+    small_talk = SmallTalkBypassProcessor(
+        context, persona_name=settings.persona_name, name="SmallTalkBypass"
+    )
     dedup = StreamDeduplicator(name="StreamDedup")
     resp_policy = ResponsePolicyProcessor(
         max_sentences=settings.response_max_sentences,
@@ -455,6 +463,7 @@ def _assemble_hybrid_bundle(
                 user_aggregator,
                 compactor,
                 grounding,
+                small_talk,
                 llm,
                 dedup,
                 resp_policy,

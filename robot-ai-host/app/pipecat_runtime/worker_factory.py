@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.observers.user_bot_latency_observer import UserBotLatencyObserver
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.transports.base_transport import BaseTransport
@@ -156,10 +156,11 @@ async def create_worker_for_session(
     async def on_client_connected(transport: Any, client: Any) -> None:
         logger.info("client_connected", session_id=session_id, device_id=device_id)
         if auto_intro:
-            bundle.context.add_message(
-                {"role": "developer", "content": "Hãy giới thiệu ngắn gọn với người dùng."}
-            )
-            await worker.queue_frames([LLMRunFrame()])
+            # Fixed intro spoken instantly — no LLM round-trip on connect.
+            name = settings.persona_name or "Mây Mây"
+            intro = f"Mình là {name}, mình có thể giúp gì cho bạn nè?"
+            bundle.context.add_message({"role": "assistant", "content": intro})
+            await worker.queue_frames([TTSSpeakFrame(intro)])
 
     runner = WorkerRunner(handle_sigint=False)
 

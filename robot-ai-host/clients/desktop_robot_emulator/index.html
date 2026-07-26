@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Robot AI Host — desktop robot face emulator" />
+    <title>Robot AI Host — Robot giả lập</title>
+  </head>
+  <body>
+    <main class="stage">
+      <!-- Mây Mây — robot face -->
+      <div id="robot" class="robot" data-state="offline" data-emotion="neutral">
+        <div class="aura"></div>
+        <div id="head" class="head">
+          <span class="bump b1"></span>
+          <span class="bump b2"></span>
+          <span class="bump b3"></span>
+          <span class="bump b4"></span>
+          <div class="face">
+            <div class="brows">
+              <span class="brow left"></span>
+              <span class="brow right"></span>
+            </div>
+            <div class="eyes">
+              <div class="eye left">
+                <div class="iris"><div class="pupil"></div></div>
+                <div class="shine big"></div><div class="shine small"></div>
+                <div class="eyelid top"></div><div class="eyelid bottom"></div>
+              </div>
+              <div class="eye right">
+                <div class="iris"><div class="pupil"></div></div>
+                <div class="shine big"></div><div class="shine small"></div>
+                <div class="eyelid top"></div><div class="eyelid bottom"></div>
+              </div>
+            </div>
+            <div class="cheeks">
+              <span class="cheek left"></span>
+              <span class="cheek right"></span>
+            </div>
+            <div class="mouth-wrap">
+              <div id="mouth" class="mouth"><div class="tongue"></div></div>
+            </div>
+            <span class="tear left"></span>
+            <span class="tear right"></span>
+            <span class="sweat"></span>
+            <div class="think-dots"><i></i><i></i><i></i></div>
+            <div class="zzz"><span>Z</span><span>z</span><span>z</span></div>
+          </div>
+          <div id="particles" class="particles"></div>
+        </div>
+        <div id="listenRing" class="listen-ring"></div>
+        <div class="ground-shadow"></div>
+        <p class="nametag">Mây Mây</p>
+      </div>
+
+      <div class="caption">
+        <p id="stateLabel" class="state-label">Chưa kết nối</p>
+        <p id="behaviorLabel" class="behavior-label">—</p>
+        <p id="lastText" class="last-text"></p>
+      </div>
+
+      <!-- Settings gear (shown after connect) -->
+      <button id="gearToggle" class="gear" title="Cài đặt" hidden>⚙️</button>
+
+      <!-- Controls -->
+      <section class="panel" id="controls">
+        <label>Host server <input id="serverUrl" value="" /></label>
+        <label>Device ID <input id="deviceId" value="robot-face-001" maxlength="128" /></label>
+        <label>Provisioning secret <input id="provisioningSecret" type="password" value="dev-provisioning-secret" /></label>
+        <label>Profile
+          <select id="profile">
+            <option value="hybrid_local_vi">hybrid_local_vi</option>
+            <option value="mock">mock</option>
+            <option value="google_vi">google_vi</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button id="connect" class="primary">Kết nối</button>
+          <button id="disconnect" disabled>Ngắt</button>
+          <button id="wake" disabled>Đánh thức</button>
+          <button id="sleep" disabled>Ngủ</button>
+        </div>
+        <p id="status" class="muted">Sẵn sàng.</p>
+      </section>
+
+      <audio id="botAudio" autoplay playsinline></audio>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

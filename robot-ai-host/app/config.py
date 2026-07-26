@@ -73,6 +73,10 @@ class Settings(BaseSettings):
 
     host: str = "0.0.0.0"
     port: int = 8000
+    # HTTPS for LAN devices (phones need a secure context for mic/WebRTC).
+    # Generate with scripts/gen_self_signed_cert.sh; empty = plain HTTP.
+    ssl_certfile: str = ""
+    ssl_keyfile: str = ""
     max_sessions: int = 4
     provisioning_secret: str = "change-me-in-production"
     jwt_secret_key: str = "change-me-in-production"

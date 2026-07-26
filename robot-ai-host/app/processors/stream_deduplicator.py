@@ -9,6 +9,10 @@ from collections.abc import AsyncGenerator
 from pipecat.frames.frames import Frame, TTSStoppedFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
+from app.logging_utils import get_logger
+
+logger = get_logger(__name__)
+
 
 class StreamDeduplicator(FrameProcessor):
     """Drop duplicate sentences within the same turn using normalized hashes."""
@@ -36,6 +40,12 @@ class StreamDeduplicator(FrameProcessor):
                 return
 
             norm = self._normalize(text)
+            # Short interjections ("Dạ.", "Đúng rồi nè.") legitimately repeat
+            # inside one reply — deduping them EATS words mid-speech. Only
+            # guard against long stutter-loop sentences.
+            if len(norm.split()) < 4:
+                await self.push_frame(frame, direction)
+                return
             h = self._hash(norm)
             now = time.monotonic()
 
@@ -43,9 +53,13 @@ class StreamDeduplicator(FrameProcessor):
             self._seen = {k: v for k, v in self._seen.items() if v > now}
 
             if h in self._seen:
-                self._logger.debug(f"Dropped duplicate sentence hash={h} text={text[:60]}")
+                logger.debug("dedup_dropped_sentence", hash=h, text=text[:60])
                 return
 
             self._seen[h] = now + self._ttl
+
+        elif isinstance(frame, TTSStoppedFrame):
+            # Dedup is per-turn: legit repeats across turns ("Dạ!") must pass.
+            self._seen.clear()
 
         await self.push_frame(frame, direction)

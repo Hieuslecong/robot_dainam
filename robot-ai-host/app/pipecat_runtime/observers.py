@@ -66,6 +66,10 @@ class RuntimeMetricsObserver(BaseObserver):
         self._user_stopped_at: float | None = None
         self._bot_speaking = False
         self._turn = TurnTimeline()
+        # on_push_frame fires once per processor hop, so the SAME frame is
+        # observed N times as it travels the pipeline — dedupe by frame id or
+        # every metric gets recorded ~N times (2.3MB jsonl bug).
+        self._seen_frames: dict[int, None] = {}
 
     async def _record(self, name: str, value_ms: float, **metadata) -> None:
         await self._tracker.record(name, value_ms, metadata=metadata, **self._context)
@@ -116,6 +120,12 @@ class RuntimeMetricsObserver(BaseObserver):
         if data.direction != FrameDirection.DOWNSTREAM:
             return
         frame = data.frame
+        if frame.id in self._seen_frames:
+            return
+        self._seen_frames[frame.id] = None
+        if len(self._seen_frames) > 4096:  # bounded: drop oldest half
+            for key in list(self._seen_frames)[:2048]:
+                del self._seen_frames[key]
         now = time.monotonic()
         frame_type = type(frame).__name__
 
