@@ -1,0 +1,10 @@
+# Cloudflared tunnel config for robot-ai-host
+# Fix: noTLSVerify = true vì service dùng self-signed cert
+tunnel: robot-ai-host
+credentials-file: /Users/minhhieu/.cloudflared/robot-ai-host.json
+
+ingress:
+  - hostname: "*"
+    service: https://localhost:8000
+    originRequest:
+      noTLSVerify: true

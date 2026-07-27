@@ -45,6 +45,7 @@ class PipelineBundle:
     context_manager: ContextManager = field(default_factory=ContextManager)
     resources: list[AsyncClosable] = field(default_factory=list)
     wake_gate: object | None = None
+    vieneu_engine: object | None = None  # for readiness checks
 
     def reset_conversation(self) -> None:
         """Drop all conversation history, keeping only the system head."""
@@ -356,13 +357,12 @@ async def _create_hybrid_local_vi_pipeline(
         timeout=aiohttp.ClientTimeout(total=settings.piper_request_timeout_seconds)
     )
     if settings.tts_two_tier_enabled:
-        from app.pipecat_runtime.two_tier_tts import TwoTierTTSService, piper_synthesize
-        from app.pipecat_runtime.text_sanitizer import strip_emotion_tags
+        from app.pipecat_runtime.two_tier_tts import TwoTierTTSService
         from app.pipecat_runtime.vieneu_engine import VieNeuEngine
 
         logger.info(
             "two_tier_tts_enabled",
-            opener="piper",
+            opener="vieneu",
             expressive="vieneu_v3_turbo",
             opener_first=settings.tts_opener_first,
             vieneu_voice=settings.vieneu_voice or "(default)",
@@ -371,21 +371,16 @@ async def _create_hybrid_local_vi_pipeline(
             vieneu_temperature=settings.vieneu_temperature,
         )
 
-        voice = profile.tts.voice or settings.piper_voice
         vieneu = VieNeuEngine(
             voice=settings.vieneu_voice,
             speed=settings.vieneu_speed,
             temperature=settings.vieneu_temperature,
         )
-        # Load the model NOW, not on the first expressive sentence — lazy load
-        # would blow the render budget and silently fall back to Piper.
         vieneu.start_warm_up()
 
+        # VieNeu handles ALL sentences — no Piper sidecar needed anymore.
         async def _opener(text: str) -> tuple[bytes, int]:
-            # Piper reads "[cười]" literally — strip emotion tags on this path.
-            return await piper_synthesize(
-                http_session, settings.piper_base_url, voice, strip_emotion_tags(text)
-            )
+            return await vieneu.synthesize(text, style=settings.vieneu_style)
 
         async def _expressive(text: str) -> tuple[bytes, int]:
             return await vieneu.synthesize(text, style=settings.vieneu_style)
@@ -404,7 +399,7 @@ async def _create_hybrid_local_vi_pipeline(
         )
         return _assemble_hybrid_bundle(
             transport, settings=settings, stt=stt, llm=llm, tts=tts,
-            http_session=http_session,
+            http_session=http_session, vieneu_engine=vieneu,
         )
     try:
         tts = PiperHttpTTSService(
@@ -436,6 +431,7 @@ def _assemble_hybrid_bundle(
     llm,
     tts,
     http_session,
+    vieneu_engine=None,
 ) -> PipelineBundle:
     context = LLMContext()
     user_aggregator, assistant_aggregator = _build_aggregators(context, settings)
@@ -479,6 +475,7 @@ def _assemble_hybrid_bundle(
         context_manager=manager,
         wake_gate=wake_gate,
         resources=[http_session],
+        vieneu_engine=vieneu_engine,
     )
 
 

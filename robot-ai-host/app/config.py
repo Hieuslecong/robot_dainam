@@ -85,6 +85,31 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     default_profile: str = "mock"
     cors_origins: str = "http://127.0.0.1:8000,http://localhost:8000"
+    # WebRTC ICE servers (STUN/TURN) for NAT traversal.
+    # Comma-separated list of "stun:host:port" or "turn:host:port?transport=udp".
+    # The turn URL may include "?credential=..." — Pydantic will preserve it.
+    # Default: Google's free STUN servers.
+    webrtc_ice_servers: str = (
+        "stun:stun.l.google.com:19302,"
+        "stun:stun1.l.google.com:19302"
+    )
+
+    # Cloudflare TURN credentials (per-session short-lived).
+    # Obtain KEY_ID and API_TOKEN from Cloudflare Dashboard → Turn.
+    # Leave empty to fall back to static webrtc_ice_servers.
+    cloudflare_turn_key_id: str = ""
+    cloudflare_turn_api_token: str = ""
+    cloudflare_turn_ttl_seconds: int = 3600
+
+    # ICE policy: "all" (default) or "relay" (force TURN, testing only).
+    webrtc_ice_policy: str = "all"
+    webrtc_force_relay: bool = False
+
+    # Toggle individual transport modes.
+    webrtc_enable_stun: bool = True
+    webrtc_enable_turn_udp: bool = True
+    webrtc_enable_turn_tcp: bool = True
+    webrtc_enable_turn_tls: bool = True
 
     # Mock test harness.
     mock_auto_transcribe: bool = True
@@ -106,7 +131,7 @@ class Settings(BaseSettings):
     # Spec 9.6: conversation temperature 0.45–0.6. Router/planner get their own
     # values when adaptive routing lands (Phase 3).
     llm_temperature: float = 0.5
-    llm_max_tokens: int = 160
+    llm_max_tokens: int = 100
     llm_stream: bool = True
     llm_runtime_hint: str = "unknown"
     # Spec 9.1 optional role models; empty falls back to LLM_MODEL.
@@ -121,8 +146,8 @@ class Settings(BaseSettings):
     persona_name: str = "Trợ lý AI của trường"
     # Hard overflow ceiling per response (everyday brevity comes from the
     # prompt; long-form like storytelling stays legal under this cap).
-    response_max_sentences: int = 8
-    response_max_words: int = 150
+    response_max_sentences: int = 5
+    response_max_words: int = 100
     # Spec 13.1: keep the last 6–8 turns verbatim; older turns are summarized.
     conversation_max_turns: int = 8
 

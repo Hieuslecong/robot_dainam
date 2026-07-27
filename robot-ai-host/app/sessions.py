@@ -39,6 +39,7 @@ class SessionInfo(BaseModel):
     language: str = "vi-VN"
     cleanup_status: str = "none"
     metrics_summary: dict[str, Any] | None = None
+    ice_servers: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SessionManager:
@@ -61,6 +62,7 @@ class SessionManager:
         profile: str,
         language: str = "vi-VN",
         transport: str = "webrtc",
+        ice_servers: list[dict[str, Any]] | None = None,
     ) -> SessionInfo:
         """Create a new session.
 
@@ -113,6 +115,7 @@ class SessionManager:
                 profile=profile,
                 language=language,
                 transport=transport,
+                ice_servers=ice_servers or [],
             )
             self._sessions[session_id] = session
             logger.info(

@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+
+try:
+    import uvloop  # type: ignore[import-untyped]
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -37,6 +43,7 @@ from app.sessions import SessionManager, SessionState
 logger = get_logger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BROWSER_DIST_DIR = ROOT_DIR / "clients" / "browser" / "dist"
+BROWSER_SRC_DIR = ROOT_DIR / "clients" / "browser"
 ROBOT_DIST_DIR = ROOT_DIR / "clients" / "desktop_robot_emulator" / "dist"
 
 
@@ -69,6 +76,10 @@ class CreateSessionResponse(BaseModel):
     expires_in: int
     webrtcUrl: str
     webrtc: dict[str, Any]
+    turnExpiresAt: float | None = None
+    iceTransportPolicy: str = "all"
+    # Pipecat client-js reads iceConfig at top level of connect params.
+    iceConfig: dict[str, Any] | None = None
 
 
 class OfferRequest(BaseModel):
@@ -92,6 +103,9 @@ class IceCandidateRequest(BaseModel):
 class PatchOfferRequest(BaseModel):
     pc_id: str
     candidates: list[IceCandidateRequest]
+
+
+from app.pipecat_runtime.ice_utils import parse_ice_servers as _parse_ice_servers
 
 
 class HeartbeatResponse(BaseModel):
@@ -181,8 +195,14 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     )
 
     register_routes(app)
+
+    # Admin API (settings, knowledge, voices, restart)
+    from app.admin import router as admin_router
+    app.include_router(admin_router)
+
+    # Voice chat client at /client/chat (original Pipecat web client)
     if BROWSER_DIST_DIR.is_dir():
-        app.mount("/client", StaticFiles(directory=BROWSER_DIST_DIR, html=True), name="client")
+        app.mount("/client/chat", StaticFiles(directory=BROWSER_DIST_DIR, html=True), name="chat")
     if ROBOT_DIST_DIR.is_dir():
         app.mount("/robot", StaticFiles(directory=ROBOT_DIST_DIR, html=True), name="robot")
     return app
@@ -274,12 +294,42 @@ def register_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=422, detail="Transport/profile mismatch")
 
         manager: SessionManager = request.app.state.session_manager
+        # ── Build ICE servers first (needed by both session + response) ──
+        ice_servers: list[dict[str, Any]] = []
+        turn_expires_at: float | None = None
+        try:
+            from app.pipecat_runtime.turn_credentials import get_turn_service
+
+            turn_service = get_turn_service(settings)
+            if turn_service.use_cloudflare:
+                cf_cred = await turn_service.generate_credentials()
+                if cf_cred:
+                    ice_servers = turn_service.build_ice_servers(cf_cred)
+                    turn_expires_at = time.time() + cf_cred.ttl
+                    logger.info(
+                        "turn_credential_generated",
+                        session_id=None,  # not yet created
+                        expires_at=turn_expires_at,
+                        urls_count=sum(
+                            1 + (len(s.get("urls", [])) if isinstance(s.get("urls"), list) else 0)
+                            for s in ice_servers
+                        ),
+                    )
+                else:
+                    ice_servers = turn_service.build_ice_servers()
+            else:
+                ice_servers = turn_service.build_ice_servers()
+        except Exception as exc:
+            logger.warning("turn_service_error", error=str(exc))
+            ice_servers = _parse_ice_servers(settings.webrtc_ice_servers)
+
         try:
             session = await manager.create_session(
                 device_id=payload.device_id,
                 profile=profile.name,
                 language=profile.language,
                 transport=profile.transport,
+                ice_servers=ice_servers,
             )
         except ValueError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -301,13 +351,20 @@ def register_routes(app: FastAPI) -> None:
             device_id=session.device_id,
             profile=session.profile,
         )
-        return CreateSessionResponse(
+        response = CreateSessionResponse(
             session_id=session.session_id,
             status=session.state.value,
             expires_in=settings.jwt_expiry_seconds,
             webrtcUrl=webrtc_url,
-            webrtc={"url": webrtc_url, "ice_servers": []},
+            webrtc={
+                "url": webrtc_url,
+                "ice_servers": ice_servers,
+            },
+            turnExpiresAt=turn_expires_at,
+            iceTransportPolicy=settings.webrtc_ice_policy,
+            iceConfig={"iceServers": ice_servers},
         )
+        return response
 
     @app.get("/v1/sessions/{session_id}")
     async def get_session(
@@ -435,6 +492,16 @@ def register_routes(app: FastAPI) -> None:
             restart_pc=payload.restart_pc,
             request_data=payload.request_data,
         )
+        # Pass ICE servers from session to handler so server-side also
+        # uses TURN (not just the client). Without this, the server only
+        # advertises host candidates and ICE can't complete over NAT.
+        if session.ice_servers:
+            from pipecat.transports.smallwebrtc.connection import IceServer
+
+            ice_servers_typed: list[IceServer] = []
+            for s in session.ice_servers:
+                ice_servers_typed.append(IceServer(**s))
+            handler.update_ice_servers(ice_servers_typed)
         try:
             answer = await handler.handle_web_request(small_request, connection_callback)
         except Exception as exc:
@@ -726,8 +793,25 @@ async function saveSettings() {{
 </body></html>"""
         return HTMLResponse(html)
 
+    # ── Dashboard (always served, no build required) ────────────────────
+    _dashboard_html: str | None = None
+
+    def _load_dashboard() -> str:
+        nonlocal _dashboard_html
+        if _dashboard_html is None:
+            path = BROWSER_SRC_DIR / "dashboard.html"
+            if path.is_file():
+                _dashboard_html = path.read_text(encoding="utf-8")
+            else:
+                _dashboard_html = "<h1>Dashboard not found</h1>"
+        return _dashboard_html
+
+    @app.get("/client", response_class=HTMLResponse)
+    async def dashboard(request: Request) -> HTMLResponse:
+        return HTMLResponse(_load_dashboard())
+
     if not BROWSER_DIST_DIR.is_dir():
-        @app.get("/client", response_class=HTMLResponse)
+        @app.get("/client/chat", response_class=HTMLResponse)
         async def browser_not_built() -> HTMLResponse:
             return HTMLResponse(
                 "<h1>Browser client is not built</h1>"
