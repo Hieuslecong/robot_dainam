@@ -37,10 +37,12 @@ _RULES: list[tuple[str, re.Pattern, list[str]]] = [
       "Hí lô! Mình nghe nè.",
       "Chào bạn! Gặp bạn vui ghê."]),
     ("name", re.compile(
-        r"^(bạn|em|cậu)?\s*(tên|tên là)\s*(gì|chi)\??$|^tên (bạn|em|cậu) là gì\??$",
+        r"^(cho\s+(mình|tôi)\s+hỏi\s+)?(vậy\s+)?(bạn|em|cậu|cô)?\s*(là|tên|tên là)\s*(ai|gì|chi)(\s+vậy|\s+đó|\s+đấy|\s+nè|\s+ạ)?[\s!.,~?]*$|^tên\s+(bạn|em|cậu)\s+là\s+gì[\s!.,~?]*$",
         re.IGNORECASE),
-     ["Mình là {name} nè! Rất vui được gặp bạn.",
-      "Mình tên {name}, bạn cứ gọi mình vậy nha."]),
+     ["Dạ, mình là {name}, trợ lý AI của Trường Đại Nam nè! Rất vui được gặp bạn.",
+      "Mình là {name} nè! Mình luôn ở đây để hỗ trợ bạn học tập và tìm kiếm thông tin nha."]),
+
+
     ("how_are_you", re.compile(
         r"^(bạn|em|cậu)?\s*(có )?khỏe (không|hông|hem)\??$", re.IGNORECASE),
      ["Mình khỏe re à! Còn bạn thì sao nè?",

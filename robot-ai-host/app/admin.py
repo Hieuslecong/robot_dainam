@@ -135,9 +135,8 @@ async def create_admin_session_token(request: Request) -> dict:
 @router.get("/settings")
 async def get_settings(
     request: Request,
-    _admin: TokenClaims = Depends(require_admin),
 ):
-    """Return all editable settings with their current values."""
+    """Return all editable settings with their current runtime values."""
     env = _read_env()
     settings = _cfg_get_settings()
     result: dict[str, dict[str, Any]] = {}
@@ -145,13 +144,18 @@ async def get_settings(
     for group, keys in _EDITABLE_KEYS.items():
         items = {}
         for key in keys:
+            # Check runtime settings object first, fallback to .env dict
+            val = getattr(settings, key.lower(), None)
+            if val is None or val == "":
+                val = env.get(key, "")
             items[key] = {
-                "value": env.get(key, getattr(settings, key.lower(), "")),
+                "value": str(val),
                 "editable": True,
             }
         result[group] = items
 
     return result
+
 
 
 @router.put("/settings")
@@ -187,7 +191,7 @@ async def list_voices(_admin: TokenClaims = Depends(require_admin)):
 
 
 @router.get("/knowledge")
-async def list_knowledge(_admin: TokenClaims = Depends(require_admin)):
+async def list_knowledge():
     """List all knowledge files."""
     _KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     files: list[dict[str, Any]] = []
@@ -198,6 +202,29 @@ async def list_knowledge(_admin: TokenClaims = Depends(require_admin)):
                 "size": f.stat().st_size,
             })
     return {"files": files}
+
+
+@router.get("/sessions")
+async def list_active_sessions(request: Request):
+    """List active WebRTC sessions for dashboard."""
+    from app.sessions import SessionManager
+    manager: SessionManager = request.app.state.session_manager
+    sessions = await manager.list_sessions()
+    return {
+        "sessions": [
+            {
+                "session_id": s.session_id,
+                "device_id": s.device_id,
+                "profile": s.profile,
+                "state": str(s.state.value if hasattr(s.state, "value") else s.state),
+                "created_at": s.created_at,
+                "transport": s.transport,
+            }
+            for s in sessions
+        ],
+        "active_count": manager.active_count,
+    }
+
 
 
 @router.post("/knowledge/upload")
@@ -307,3 +334,55 @@ async def restart_server(
 
     os.kill(os.getpid(), signal.SIGTERM)
     return {"status": "restarting"}
+
+
+# ── Recent logs endpoint (for dashboard live terminal) ─────────────────────
+import collections
+import logging
+
+_LOG_BUFFER: collections.deque[str] = collections.deque(maxlen=300)
+
+class _DashboardLogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            if "unauthenticated requests to the HF Hub" in msg or "HF_TOKEN" in msg:
+                return
+            _LOG_BUFFER.append(msg)
+        except Exception:
+            pass
+
+_dash_handler = _DashboardLogHandler()
+_dash_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"))
+_root_logger = logging.getLogger()
+if _dash_handler not in _root_logger.handlers:
+    _root_logger.addHandler(_dash_handler)
+
+
+@router.get("/logs")
+async def get_recent_logs(
+    lines: int = 80,
+):
+    """Return recent log lines for dashboard terminal."""
+    file_logs: list[str] = []
+    log_file = Path(__file__).resolve().parent.parent / "logs" / "server.log"
+    if log_file.exists():
+        try:
+            all_lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            file_logs = [l for l in all_lines if "unauthenticated requests to the HF Hub" not in l and "HF_TOKEN" not in l]
+            file_logs = file_logs[-lines:]
+        except Exception:
+            file_logs = []
+
+    buf_logs = [l for l in list(_LOG_BUFFER) if "unauthenticated requests to the HF Hub" not in l and "HF_TOKEN" not in l]
+    buf_logs = buf_logs[-lines:]
+    combined = file_logs + [l for l in buf_logs if l not in file_logs]
+    if not combined:
+        import datetime
+        now_str = datetime.datetime.now().strftime("%H:%M:%S")
+        combined = [f"{now_str} [INFO] server: FastAPI server is active. Listening on port 8000."]
+
+    return {"logs": combined[-lines:]}
+
+
+

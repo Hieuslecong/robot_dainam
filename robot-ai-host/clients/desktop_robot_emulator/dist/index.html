@@ -68,6 +68,18 @@
       <section class="panel" id="controls">
         <label>Host server <input id="serverUrl" value="" /></label>
         <label>Device ID <input id="deviceId" value="robot-face-001" maxlength="128" /></label>
+
+        <script>
+          (function() {
+            var dev = document.getElementById('deviceId');
+            if (dev) {
+              var count = parseInt(localStorage.getItem('robot_dev_counter') || '0', 10) + 1;
+              localStorage.setItem('robot_dev_counter', count.toString());
+              dev.value = 'robot-face-' + String(count).padStart(3, '0');
+            }
+          })();
+        </script>
+
         <label>Provisioning secret <input id="provisioningSecret" type="password" value="dev-provisioning-secret" /></label>
         <label>Profile
           <select id="profile">

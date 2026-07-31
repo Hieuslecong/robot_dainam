@@ -15,8 +15,10 @@ def test_greetings_bypass():
 
 
 def test_name_question_returns_persona_name():
-    reply = _match("bạn tên gì?")
-    assert reply is not None and NAME in reply
+    for text in ["bạn tên gì?", "bạn là ai", "bạn là ai vậy", "vậy bạn là ai đó", "cho mình hỏi bạn là ai"]:
+        reply = _match(text)
+        assert reply is not None and NAME in reply, text
+
 
 
 def test_thanks_and_goodbye_bypass():

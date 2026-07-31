@@ -49,6 +49,14 @@ const botAudio = el<HTMLAudioElement>("botAudio");
 
 serverUrl.value = window.location.origin;
 
+// Auto-increment device_id for browser test client sessions
+if (!deviceId.value || deviceId.value === "browser-test-001" || deviceId.value === "robot-face-001") {
+  let counter = parseInt(localStorage.getItem("browser_device_counter") || "0", 10) + 1;
+  localStorage.setItem("browser_device_counter", counter.toString());
+  deviceId.value = `browser-client-${String(counter).padStart(3, "0")}`;
+}
+
+
 let client: PipecatClient | undefined;
 let token = "";
 let sessionId = "";

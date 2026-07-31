@@ -65,9 +65,10 @@ _FAREWELL_THANKS = re.compile(
 )
 _STOP = re.compile(r"^(dừng( lại)?|thôi|stop|im( lặng)?|đừng nói nữa)\b", re.IGNORECASE)
 _SMALL_TALK = re.compile(
-    r"(bạn là ai|bạn tên (là )?gì|khỏe không|kh[oỏ]e ch[ưứ]|mấy giờ|hôm nay (là )?(thứ|ngày))",
+    r"((vậy )?(bạn|em|cậu|cô) (là|tên là|tên) (ai|gì|chi)|bạn là ai|bạn tên (là )?gì|khỏe không|kh[oỏ]e ch[ưứ]|mấy giờ|hôm nay (là )?(thứ|ngày))",
     re.IGNORECASE,
 )
+
 _ROBOT_BEHAVIOR = re.compile(r"(gật đầu|lắc đầu|vẫy tay|cười lên|nhảy)", re.IGNORECASE)
 
 

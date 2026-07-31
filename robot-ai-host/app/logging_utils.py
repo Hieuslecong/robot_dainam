@@ -9,7 +9,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
+
+# Suppress noisy HuggingFace Hub unauthenticated warnings
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN_WARNING"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub.utils._http").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub.file_download").setLevel(logging.ERROR)
+
 
 
 class _StdlibBoundLogger:

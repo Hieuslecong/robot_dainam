@@ -39,3 +39,5 @@ models/
 .coverage
 htmlcov/
 assets/intro/
+.server.lock
+

@@ -125,6 +125,8 @@ class HealthResponse(BaseModel):
     default_profile: str
     webrtc_available: bool
     browser_built: bool
+    tunnel_url: str | None = None
+
 
 
 def create_app(settings_override: Settings | None = None) -> FastAPI:
@@ -224,6 +226,20 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         app.mount("/client/chat", StaticFiles(directory=BROWSER_DIST_DIR, html=True), name="chat")
     if ROBOT_DIST_DIR.is_dir():
         app.mount("/robot", StaticFiles(directory=ROBOT_DIST_DIR, html=True), name="robot")
+    
+    # Mount Dashboard HTML at /dashboard and /v1/admin/dashboard
+    dashboard_file = ROOT_DIR / "dashboard.html"
+    if dashboard_file.is_file():
+        from fastapi.responses import FileResponse as _FR
+
+        @app.get("/dashboard", include_in_schema=False)
+        async def serve_dashboard():
+            return _FR(dashboard_file, media_type="text/html")
+
+        @app.get("/v1/admin/dashboard", include_in_schema=False)
+        async def serve_admin_dashboard():
+            return _FR(dashboard_file, media_type="text/html")
+
     return app
 
 
@@ -246,6 +262,15 @@ def register_routes(app: FastAPI) -> None:
     async def health(request: Request) -> HealthResponse:
         manager: SessionManager = request.app.state.session_manager
         settings: Settings = request.app.state.settings
+
+        t_url = None
+        t_file = ROOT_DIR / "logs" / "tunnel_url.txt"
+        if t_file.exists():
+            try:
+                t_url = t_file.read_text(encoding="utf-8").strip() or None
+            except Exception:
+                t_url = None
+
         return HealthResponse(
             status="ok",
             version="0.1.0",
@@ -254,7 +279,9 @@ def register_routes(app: FastAPI) -> None:
             default_profile=settings.default_profile,
             webrtc_available=request.app.state.webrtc_handler is not None,
             browser_built=BROWSER_DIST_DIR.is_dir(),
+            tunnel_url=t_url,
         )
+
 
     @app.get("/v1/profiles")
     async def profiles() -> dict[str, Any]:
