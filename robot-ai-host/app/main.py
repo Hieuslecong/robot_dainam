@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import (
     create_access_token,
+    create_connection_token,
     get_current_device,
     verify_connection_token,
 )
@@ -352,10 +353,11 @@ def register_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
 
-        connection_token = create_access_token(
+        connection_token = create_connection_token(
             payload.device_id,
             settings,
             session_id=session.session_id,
+            transport="webrtc",
             expiry_seconds=min(600, settings.jwt_expiry_seconds),
         )
         base = str(request.base_url).rstrip("/")
