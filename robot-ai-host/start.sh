@@ -44,8 +44,8 @@ if [ -z "$TUNNEL_URL" ]; then
 else
     echo "CORS auto-added: $TUNNEL_URL"
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sudo dscacheutil -flushcache 2>/dev/null
-        sudo killall -HUP mDNSResponder 2>/dev/null
+        sudo -n dscacheutil -flushcache 2>/dev/null || true
+        sudo -n killall -HUP mDNSResponder 2>/dev/null || true
     fi
 fi
 
