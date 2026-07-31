@@ -64,12 +64,25 @@ class ResponsePolicyProcessor(FrameProcessor):
             self._reset()
         elif isinstance(frame, TextFrame):
             if self._truncating:
-                return  # budget spent — swallow the rest of this response
-            self._sentences += len(_SENTENCE_END.findall(frame.text))
-            self._words += len(frame.text.split())
-            if self._sentences >= self._max_sentences or self._words >= self._max_words:
-                # This frame still passes (it ends a sentence or completes the
-                # word budget); everything after it is dropped.
+                return  # budget spent, swallow rest of response
+
+            # PR-3.7: count BEFORE pushing, stop at sentence boundary.
+            # Do NOT push the frame that exceeds the limit.
+            new_sentences = self._sentences + len(_SENTENCE_END.findall(frame.text))
+            new_words = self._words + len(frame.text.split())
+
+            if new_sentences > self._max_sentences or new_words > self._max_words:
                 self._truncating = True
+                logger.info(
+                    "response_truncated_at_boundary",
+                    sentences=self._sentences,
+                    words=self._words,
+                    max_sentences=self._max_sentences,
+                    max_words=self._max_words,
+                )
+                return  # don't push the overflowing frame
+
+            self._sentences = new_sentences
+            self._words = new_words
 
         await self.push_frame(frame, direction)

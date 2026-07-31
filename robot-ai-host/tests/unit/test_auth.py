@@ -26,8 +26,10 @@ def test_create_access_token_returns_string(settings):
 
 def test_create_access_token_contains_device_id(settings):
     token = create_access_token("device-001", settings)
-    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=["HS256"])
-    assert payload["device_id"] == "device-001"
+    claims = verify_access_token(token, settings)
+    # New token format uses "sub" instead of "device_id" (JWT standard)
+    assert claims["device_id"] == "device-001"
+    assert claims.sub == "device-001"
 
 
 def test_verify_access_token_valid(settings):
@@ -39,11 +41,16 @@ def test_verify_access_token_valid(settings):
 def test_verify_access_token_expired(settings):
     from fastapi import HTTPException
 
-    # Create a token that's already expired
+    # Create a token that's already expired (new format uses "sub")
     payload = {
-        "device_id": "device-001",
-        "iat": time.time() - 7200,
-        "exp": time.time() - 3600,
+        "sub": "device-001",
+        "typ": "device_access",
+        "scope": [],
+        "iss": "robot-ai-host",
+        "aud": "robot-ai-api",
+        "jti": "test-jti",
+        "iat": int(time.time()) - 7200,
+        "exp": int(time.time()) - 3600,
     }
     token = jwt.encode(payload, settings.jwt_secret_key, algorithm="HS256")
 

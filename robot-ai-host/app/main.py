@@ -28,6 +28,9 @@ from app.auth import (
     get_current_device,
     verify_connection_token,
 )
+from app.security.rate_limit import RateLimitMiddleware
+from app.security.tickets import TicketStore
+from app.security.audit import audit_log, set_request_id
 from app.config import (
     RuntimeProfile,
     Settings,
@@ -133,6 +136,7 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.session_manager = SessionManager(settings)
         app.state.latency_tracker = LatencyTracker(settings.metrics_jsonl_path)
+        app.state.ticket_store = TicketStore()
 
         try:
             default_profile = load_profile(settings.default_profile)
@@ -193,13 +197,27 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
+    app.add_middleware(RateLimitMiddleware)
+
+    # Audit request ID middleware
+    @app.middleware("http")
+    async def audit_request_id_middleware(request: Request, call_next):
+        rid = request.headers.get("X-Request-ID", "")
+        set_request_id(rid)
+        response = await call_next(request)
+        return response
 
     register_routes(app)
 
     # Admin API (settings, knowledge, voices, restart)
     from app.admin import router as admin_router
+
     app.include_router(admin_router)
 
+    # WebSocket RTVI transport (PR-4: feature-flagged)
+    from app.transports.websocket_rtvi import register_websocket_routes
+
+    register_websocket_routes(app)
     # Voice chat client at /client/chat (original Pipecat web client)
     if BROWSER_DIST_DIR.is_dir():
         app.mount("/client/chat", StaticFiles(directory=BROWSER_DIST_DIR, html=True), name="chat")
@@ -569,15 +587,23 @@ def register_routes(app: FastAPI) -> None:
         await handler.handle_patch_request(patch)
         return {"status": "success"}
 
-    # --- Memory control API (spec 13.4) — device-authenticated -------------
+    # ── Memory control API (PR-1: disabled by default, consent required) ──
     from app.core.memory import MemoryRefused, MemoryStore
 
     memory_store = MemoryStore()
 
+    def _check_memory_enabled(request: Request) -> None:
+        """Raise 403 if persistent memory is disabled."""
+        settings: Settings = request.app.state.settings
+        if not settings.persistent_user_memory:
+            raise HTTPException(status_code=403, detail="Persistent memory is disabled")
+
     @app.get("/v1/memory/{user_id}")
     async def memory_view(
-        user_id: str, device: dict[str, Any] = Depends(get_current_device)
+        user_id: str, request: Request, device: dict[str, Any] = Depends(get_current_device)
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
+        audit_log.log("memory_view", principal=device["device_id"], target=f"user:{user_id}")
         return memory_store.view(user_id)
 
     @app.post("/v1/memory/{user_id}")
@@ -586,6 +612,7 @@ def register_routes(app: FastAPI) -> None:
         request: Request,
         device: dict[str, Any] = Depends(get_current_device),
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
         body = await request.json()
         try:
             item = memory_store.remember(
@@ -596,18 +623,23 @@ def register_routes(app: FastAPI) -> None:
             )
         except MemoryRefused as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        audit_log.log("memory_remember", principal=device["device_id"], target=f"user:{user_id}")
         return {"stored": item}
 
     @app.delete("/v1/memory/{user_id}/{kind}")
     async def memory_delete_one(
-        user_id: str, kind: str, device: dict[str, Any] = Depends(get_current_device)
+        user_id: str, kind: str, request: Request, device: dict[str, Any] = Depends(get_current_device)
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
+        audit_log.log("memory_delete_one", principal=device["device_id"], target=f"user:{user_id}/{kind}")
         return {"deleted": memory_store.delete_one(user_id, kind)}
 
     @app.delete("/v1/memory/{user_id}")
     async def memory_delete_all(
-        user_id: str, device: dict[str, Any] = Depends(get_current_device)
+        user_id: str, request: Request, device: dict[str, Any] = Depends(get_current_device)
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
+        audit_log.log("memory_delete_all", principal=device["device_id"], target=f"user:{user_id}")
         memory_store.delete_all(user_id)
         return {"deleted": True}
 
@@ -617,8 +649,10 @@ def register_routes(app: FastAPI) -> None:
         request: Request,
         device: dict[str, Any] = Depends(get_current_device),
     ) -> dict[str, Any]:
-        body = await request.json()
-        memory_store.set_disabled(user_id, bool(body.get("disabled", True)))
+        _check_memory_enabled(request)
+        audit_log.log("memory_disable", principal=device["device_id"], target=f"user:{user_id}")
+        memory_store.disable(user_id)
+        return {"disabled": True}
         return {"disabled": bool(body.get("disabled", True))}
 
     @app.get("/v1/metrics")
@@ -654,146 +688,47 @@ def register_routes(app: FastAPI) -> None:
             "fallbacks": info.fallbacks,
         }
 
-    @app.post("/api/settings")
-    async def update_settings(request: Request) -> dict[str, Any]:
-        """Save LLM settings to .env and update in-memory config."""
-        import json as _json
+    # ── Connection ticket (PR-1: one-time, single-use, TTL 30s) ──────
+    @app.post("/v1/sessions/{session_id}/connection-ticket")
+    async def connection_ticket(
+        session_id: str,
+        request: Request,
+        device: dict[str, Any] = Depends(get_current_device),
+        transport: str = Query("webrtc", pattern="^(webrtc|websocket)$"),
+    ) -> dict[str, Any]:
+        """Issue a one-time connection ticket for WebRTC/WebSocket.
 
-        body = await request.json()
+        Ticket is opaque, single-use, TTL 30s, bound to device+session+transport.
+        Replaces the old pattern of embedding JWT in query strings.
+        """
+        from app.security.tickets import TicketStore
+
         settings: Settings = request.app.state.settings
-        env_path = ROOT_DIR / ".env"
-
-        updates = {}
-        for key, new_val in body.items():
-            if new_val is None:
-                continue
-            if key == "llm_model":
-                updates["LLM_MODEL"] = str(new_val)
-                settings.llm_model = str(new_val)
-            elif key == "llm_base_url":
-                updates["LLM_BASE_URL"] = str(new_val)
-                settings.llm_base_url = str(new_val)
-            elif key == "llm_api_key":
-                updates["LLM_API_KEY"] = str(new_val)
-                settings.llm_api_key = str(new_val)
-            elif key == "llm_temperature":
-                updates["LLM_TEMPERATURE"] = str(new_val)
-                settings.llm_temperature = float(new_val)
-            elif key == "llm_max_tokens":
-                updates["LLM_MAX_TOKENS"] = str(new_val)
-                settings.llm_max_tokens = int(new_val)
-
-        if updates and env_path.exists():
-            lines = env_path.read_text().splitlines(keepends=True)
-            new_lines = []
-            updated = set()
-            for line in lines:
-                stripped = line.strip()
-                if stripped and not stripped.startswith("#") and "=" in stripped:
-                    key = stripped.split("=", 1)[0].strip()
-                    if key in updates:
-                        new_lines.append(f"{key}={updates[key]}\n")
-                        updated.add(key)
-                        continue
-                new_lines.append(line)
-            for key, val in updates.items():
-                if key not in updated:
-                    new_lines.append(f"{key}={val}\n")
-            env_path.write_text("".join(new_lines))
-
-        return {"status": "saved", "updated": list(updates.keys())}
-
-    @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request) -> HTMLResponse:
-        """Local-only settings UI for LLM config and assistant profile."""
-        settings: Settings = request.app.state.settings
-        masked_key = (
-            settings.resolved_llm_api_key[:4] + "****"
-            if len(settings.resolved_llm_api_key) > 4
-            else "****"
+        store: TicketStore = request.app.state.ticket_store
+        ticket = store.issue(
+            device_id=device["device_id"],
+            session_id=session_id,
+            transport=transport,
+            origin=request.headers.get("origin"),
         )
-        html = f"""<!doctype html>
-<html lang="vi">
-<head><meta charset="UTF-8"><title>Cấu hình — Robot AI Host</title>
-<style>
- body{{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;background:#f5f7fa;color:#1a1a2e}}
- h1{{font-size:24px}} label{{display:block;margin:12px 0 4px;font-weight:600;font-size:14px}}
- input,select{{width:100%;padding:10px;border:1px solid #d0d5dd;border-radius:8px;font-size:14px}}
- button{{margin-top:16px;padding:12px 24px;background:#315ee7;color:#fff;border:0;border-radius:8px;cursor:pointer;font-size:14px}}
- button:hover{{background:#2449b4}} .card{{background:#fff;border-radius:12px;padding:20px;margin:16px 0;box-shadow:0 2px 8px rgba(0,0,0,.06)}}
- .result{{margin-top:8px;padding:10px;border-radius:8px;font-size:13px}} .ok{{background:#daf5e4;color:#17633a}} .fail{{background:#f9dddd;color:#9b2929}}
-</style></head>
-<body>
-<h1>⚙️ Cấu hình Robot AI Host</h1>
-<div class="card">
- <h2>LLM endpoint</h2>
- <label>Base URL <input id="baseUrl" value="{settings.resolved_llm_base_url or ''}"></label>
- <label>Model <input id="model" value="{settings.resolved_llm_model}"></label>
- <label>API Key <input id="apiKey" type="password" value="{masked_key}" placeholder="Nhập API key..."></label>
- <label>Temperature <input id="temperature" type="number" step="0.1" min="0" max="2" value="{settings.llm_temperature}"></label>
- <label>Max tokens <input id="maxTokens" type="number" value="{settings.llm_max_tokens}"></label>
- <label>Timeout (giây) <input id="timeout" type="number" value="{settings.llm_timeout_seconds}"></label>
- <label>Streaming <select id="stream"><option value="true" {'selected' if settings.llm_stream else ''}>Bật</option><option value="false" {'' if settings.llm_stream else 'selected'}>Tắt</option></select></label>
- <button onclick="testConnection()">🔍 Kiểm tra kết nối</button>
- <div id="testResult" class="result"></div>
-</div>
-<div class="card">
- <h2>Trợ lý</h2>
- <label>Tên trợ lý <input id="assistantName" value="{settings.persona_name}"></label>
- <label>Số câu tối đa <input id="maxSentences" type="number" value="{settings.response_max_sentences}"></label>
- <label>Số từ tối đa <input id="maxWords" type="number" value="{settings.response_max_words}"></label>
- <button onclick="saveSettings()">💾 Lưu cấu hình</button>
-</div>
-<script>
-async function testConnection() {{
- const r = document.getElementById('testResult');
- r.textContent = 'Đang kiểm tra...'; r.className = 'result';
- try {{
-  const resp = await fetch('/api/system/devices');
-  const data = await resp.json();
-  r.textContent = '✅ Kết nối OK — model: ' + data.llm_model + ', STT: ' + data.stt_backend + ', GPU: ' + data.pytorch_device;
-  r.className = 'result ok';
- }} catch(e) {{
-  r.textContent = '❌ Lỗi: ' + e.message;
-  r.className = 'result fail';
- }}
-}}
-async function saveSettings() {{
- const r = document.getElementById('testResult');
- r.textContent = 'Đang lưu...'; r.className = 'result';
- try {{
-  const model = document.getElementById('model').value.trim();
-  const baseUrl = document.getElementById('baseUrl').value.trim();
-  const apiKey = document.getElementById('apiKey').value;
-  const resp = await fetch('/api/settings', {{
-   method: 'POST',
-   headers: {{'Content-Type': 'application/json'}},
-   body: JSON.stringify({{
-    llm_model: model || null,
-    llm_base_url: baseUrl || null,
-    llm_api_key: apiKey !== '{masked_key}' ? apiKey : null,
-    llm_temperature: parseFloat(document.getElementById('temperature').value) || null,
-    llm_max_tokens: parseInt(document.getElementById('maxTokens').value) || null,
-   }})
-  }});
-  const data = await resp.json();
-  if (data.status === 'saved') {{
-   r.textContent = '✅ Đã lưu! Cần restart host để áp dụng model mới: ' + (model || '(giữnguyên)');
-   r.className = 'result ok';
-  }} else {{
-   r.textContent = '❌ ' + (data.detail || 'Lỗi không xác định');
-   r.className = 'result fail';
-  }}
- }} catch(e) {{
-  r.textContent = '❌ Lỗi: ' + e.message;
-  r.className = 'result fail';
- }}
-}}
-</script>
-</body></html>"""
-        return HTMLResponse(html)
+        audit_log.log(
+            "connection_ticket_issued",
+            principal=device["device_id"],
+            target=f"session:{session_id}",
+            source_ip=request.client.host if request.client else "-",
+            extra={"transport": transport, "ticket_prefix": ticket.ticket[:8] + "..."},
+        )
+        return {
+            "ticket": ticket.ticket,
+            "expires_in": ticket.ttl_seconds,
+            "transport": transport,
+        }
 
-    # ── Dashboard (always served, no build required) ────────────────────
+    # ── Legacy endpoints removed (PR-1) ───────────────────────────────
+    # POST /api/settings — REMOVED (no auth, now admin-only via /v1/admin)
+    # GET /settings — REMOVED (HTML page leaked masked API key)
+
+    # Dashboard (always served, no build required) ────────────────────
     _dashboard_html: str | None = None
 
     def _load_dashboard() -> str:

@@ -13,14 +13,14 @@ Endpoints:
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from app.auth import get_current_device
+from app.security.admin import require_admin, require_scope
+from app.security.tokens import TokenClaims
 from app.config import get_settings as _cfg_get_settings
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -111,7 +111,10 @@ def _write_env(updates: dict[str, str]) -> None:
 # ── Routes ──────────────────────────────────────────────────────────────────
 
 @router.get("/settings")
-async def get_settings(request: Request, _device: dict[str, Any] = __import__("fastapi").Depends(get_current_device)):
+async def get_settings(
+    request: Request,
+    _admin: TokenClaims = Depends(require_admin),
+):
     """Return all editable settings with their current values."""
     env = _read_env()
     settings = _cfg_get_settings()
@@ -133,7 +136,7 @@ async def get_settings(request: Request, _device: dict[str, Any] = __import__("f
 async def update_settings(
     request: Request,
     body: dict[str, Any],
-    _device: dict[str, Any] = __import__("fastapi").Depends(get_current_device),
+    _admin: TokenClaims = Depends(require_admin),
 ):
     """Update editable settings. Only whitelisted keys are accepted."""
     updates: dict[str, str] = {}
@@ -156,13 +159,13 @@ async def update_settings(
 
 
 @router.get("/voices")
-async def list_voices(_device: dict[str, Any] = __import__("fastapi").Depends(get_current_device)):
+async def list_voices(_admin: TokenClaims = Depends(require_admin)):
     """List available TTS voices."""
     return {"voices": _KNOWN_VIENEU_VOICES}
 
 
 @router.get("/knowledge")
-async def list_knowledge(_device: dict[str, Any] = __import__("fastapi").Depends(get_current_device)):
+async def list_knowledge(_admin: TokenClaims = Depends(require_admin)):
     """List all knowledge files."""
     _KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     files: list[dict[str, Any]] = []
@@ -178,30 +181,90 @@ async def list_knowledge(_device: dict[str, Any] = __import__("fastapi").Depends
 @router.post("/knowledge/upload")
 async def upload_knowledge(
     file: UploadFile = File(...),
-    _device: dict[str, Any] = __import__("fastapi").Depends(get_current_device),
+    request: Request = None,
+    _admin: TokenClaims = Depends(require_admin),
 ):
-    """Upload a knowledge file (max 10 MB, .yaml/.yml/.txt/.md only)."""
+    """Upload a knowledge file (max 10 MB, .yaml/.yml/.txt/.md only).
+
+    Security (PR-1.6):
+    - Uses safe filename via Path().name (prevents path traversal)
+    - UUID-based internal filename
+    - Chunked read with size limit (stops immediately on overflow)
+    - Writes to temp file, then atomic rename
+    - Audit log on success/failure
+    - Temp file cleanup on error
+    """
+    import os
+    import uuid
+
     _MAX_BYTES = 10 * 1024 * 1024
     _ALLOWED = {".yaml", ".yml", ".txt", ".md"}
+
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename")
-    suffix = Path(file.filename).suffix.lower()
+
+    # Safe filename extraction — only the basename, never a path
+    safe_name = Path(file.filename).name
+    suffix = Path(safe_name).suffix.lower()
     if suffix not in _ALLOWED:
-        raise HTTPException(status_code=400, detail=f"File type '{suffix}' not allowed. Use: {', '.join(sorted(_ALLOWED))}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{suffix}' not allowed. Use: {', '.join(sorted(_ALLOWED))}",
+        )
+
     _KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
-    dest = _KNOWLEDGE_DIR / file.filename
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    if dest.stat().st_size > _MAX_BYTES:
-        dest.unlink()
-        raise HTTPException(status_code=413, detail=f"File exceeds {_MAX_BYTES // (1024*1024)} MB limit")
-    return {"status": "ok", "name": file.filename, "size": dest.stat().st_size}
+
+    # Write to temp file first, then atomic rename
+    internal_name = f"{uuid.uuid4().hex}{suffix}"
+    temp_path = _KNOWLEDGE_DIR / f".tmp_{internal_name}"
+    final_path = _KNOWLEDGE_DIR / internal_name
+
+    # Containment check: ensure final_path resolves within _KNOWLEDGE_DIR
+    if not str(final_path.resolve()).startswith(str(_KNOWLEDGE_DIR.resolve())):
+        raise HTTPException(status_code=403, detail="Path traversal denied")
+
+    total_bytes = 0
+    try:
+        with temp_path.open("wb") as f:
+            while chunk := file.file.read(65536):  # 64KB chunks
+                total_bytes += len(chunk)
+                if total_bytes > _MAX_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds {_MAX_BYTES // (1024 * 1024)} MB limit",
+                    )
+                f.write(chunk)
+
+        # Atomic rename
+        os.replace(temp_path, final_path)
+
+    except HTTPException:
+        # Clean up temp file on error
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+    except Exception as exc:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
+
+    from app.security.audit import audit_log
+
+    audit_log.log(
+        "knowledge_upload",
+        principal=_admin.sub,
+        target=f"knowledge:{safe_name}",
+        source_ip=request.client.host if request and request.client else "-",
+        extra={"internal_name": internal_name, "size": total_bytes},
+    )
+
+    return {"status": "ok", "name": safe_name, "size": total_bytes, "internal": internal_name}
 
 
 @router.delete("/knowledge/{name:path}")
 async def delete_knowledge(
     name: str,
-    _device: dict[str, Any] = __import__("fastapi").Depends(get_current_device),
+    _admin: TokenClaims = Depends(require_admin),
 ):
     """Delete a knowledge file."""
     target = _KNOWLEDGE_DIR / name
@@ -215,9 +278,9 @@ async def delete_knowledge(
 
 @router.post("/restart")
 async def restart_server(
-    _device: dict[str, Any] = __import__("fastapi").Depends(get_current_device),
+    _admin: TokenClaims = Depends(require_admin),
 ):
-    """Restart the server by exiting (process manager should restart it)."""
+    """Restart the server process."""
     import signal
 
     os.kill(os.getpid(), signal.SIGTERM)

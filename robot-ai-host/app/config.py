@@ -229,6 +229,12 @@ class Settings(BaseSettings):
     # Observability.
     metrics_jsonl_path: str = "artifacts/runtime-metrics.jsonl"
 
+    # Memory (PR-1): off by default for public robots. Requires consent + identity.
+    persistent_user_memory: bool = False
+
+    # WebSocket RTVI transport (PR-4): feature-flagged, default disabled.
+    websocket_rtvi_enabled: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
