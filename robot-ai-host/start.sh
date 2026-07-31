@@ -1,108 +1,69 @@
 #!/usr/bin/env bash
-set -euo pipefail
-# ── Start robot-ai-host server + cloudflared tunnel ─────────────────────
+# Minimal start script - no set -e, no traps, pure simplicity
+cd "$(dirname "$0")"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT"
-VENV=".venv-hybrid"
+PROFILE="${DEFAULT_PROFILE:-hybrid_local_vi}"
+PORT="${PORT:-8000}"
+LOCK_FILE=".server.lock"
+TUNNEL_LOG="cflog.$$.log"
 
-SERVER_PID=""
-TUNNEL_PID=""
-TUNNEL_LOG=$(mktemp -t cflog.XXXXXX)
-DONE=false
+# Lock check
+if [ -f "$LOCK_FILE" ]; then
+    OLD_PID=$(cat "$LOCK_FILE" 2>/dev/null)
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "Another instance running (pid $OLD_PID). Stop it first."
+        exit 1
+    fi
+    rm -f "$LOCK_FILE"
+fi
 
-cleanup() {
-    $DONE && return
-    DONE=true
-    echo ""
-    echo "🛑 Stopping..."
-    [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
-    [ -n "$TUNNEL_PID" ] && kill "$TUNNEL_PID" 2>/dev/null
-    lsof -ti :8000 2>/dev/null | xargs kill -9 2>/dev/null
-    rm -f "$TUNNEL_LOG"
-    echo "✅ Stopped."
-}
-trap cleanup EXIT INT TERM
+echo ""
+echo "=== Starting Robot AI Host ==="
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 Robot AI Host + Cloudflare"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# Start tunnel
+echo "Starting Cloudflare Quick Tunnel..."
+cloudflared tunnel --url http://localhost:$PORT > "$TUNNEL_LOG" 2>&1 &
+TUNNEL_PID=$!
 
-# ── 1. Clean old server (don't touch other cloudflared) ─────────────────
-echo "🧹 Cleaning..."
-pkill -f "app.main --profile" 2>/dev/null || true
-lsof -ti :8000 2>/dev/null | xargs kill -9 2>/dev/null || true
-sleep 1
-
-# ── 2. Start server ────────────────────────────────────────────────────
-echo "📡 Starting server..."
-PYTHONPATH=. "$VENV/bin/python" -m app.main --profile hybrid_local_vi >/dev/null 2>&1 &
-SERVER_PID=$!
-
-for i in $(seq 1 20); do
-    curl -sk --max-time 2 "https://127.0.0.1:8000/health" >/dev/null 2>&1 && break
-    kill -0 "$SERVER_PID" 2>/dev/null || { echo "❌ Server crashed"; exit 1; }
-    sleep 1
-done
-echo "   ✅ Server ready (port 8000)"
-
-# ── 3. Start tunnel with retry ─────────────────────────────────────────
-start_tunnel() {
-    >"$TUNNEL_LOG"
-    cloudflared tunnel --url https://localhost:8000 --no-tls-verify --protocol http2 >"$TUNNEL_LOG" 2>&1 &
-    TUNNEL_PID=$!
-}
-
-wait_for_url() {
-    for i in $(seq 1 30); do
-        URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)
-        [ -n "$URL" ] && { echo "$URL"; return 0; }
-        if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then return 1; fi
-        sleep 1
-    done
-    return 1
-}
-
+# Parse domain
+echo "Waiting for tunnel domain (max 60s)..."
 TUNNEL_URL=""
-for attempt in 1 2 3; do
-    echo "🌐 Starting tunnel (attempt $attempt)..."
-    start_tunnel
-    TUNNEL_URL=$(wait_for_url) && break
-    echo "   ⚠️  Tunnel failed, retrying..."
-    kill "$TUNNEL_PID" 2>/dev/null || true
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+    FOUND=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)
+    if [ -n "$FOUND" ]; then
+        TUNNEL_URL="$FOUND"
+        export TUNNEL_URL
+        echo "Tunnel ready: $TUNNEL_URL"
+        break
+    fi
     sleep 2
 done
 
 if [ -z "$TUNNEL_URL" ]; then
-    echo "❌ Tunnel failed after 3 attempts"
-    exit 1
-fi
-
-# Verify
-if curl -sk --max-time 5 "$TUNNEL_URL/health" >/dev/null 2>&1; then
-    echo "   ✅ $TUNNEL_URL"
+    echo "WARNING: No tunnel domain found, continuing anyway..."
 else
-    echo "   ⚠️  $TUNNEL_URL (DNS may need a moment)"
+    echo "CORS auto-added: $TUNNEL_URL"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sudo dscacheutil -flushcache 2>/dev/null
+        sudo killall -HUP mDNSResponder 2>/dev/null
+    fi
 fi
 
-# ── 4. Keep tunnel alive ───────────────────────────────────────────────
+# Start bot
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✅ Ready!  (tunnel auto-restarts if dropped)"
-echo ""
-echo "  Public:  ${TUNNEL_URL}/client/"
-echo ""
-echo "  Ctrl+C to stop"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Starting bot on port $PORT..."
+PYTHONPATH= .venv/bin/python3 -m app.main \
+    --profile "$PROFILE" \
+    --port "$PORT" \
+    --host 0.0.0.0 &
+SERVER_PID=$!
+echo "$$" > "$LOCK_FILE"
 
-# Monitor loop — restart tunnel if it dies
-while true; do
-    wait "$TUNNEL_PID" 2>/dev/null || true
-    echo "🔄 Tunnel lost, restarting..."
-    sleep 3
-    start_tunnel
-    TUNNEL_URL=$(wait_for_url)
-    if [ -n "$TUNNEL_URL" ]; then
-        echo "   ✅ $TUNNEL_URL"
-    fi
-done
+echo "Server PID: $SERVER_PID | Tunnel PID: $TUNNEL_PID"
+echo "Dashboard: http://localhost:$PORT/dashboard"
+[ -n "$TUNNEL_URL" ] && echo "Public:    $TUNNEL_URL/dashboard"
+echo ""
+
+# Wait for any signal
+trap "echo 'Received signal, shutting down...'; kill $SERVER_PID $TUNNEL_PID 2>/dev/null; rm -f $LOCK_FILE $TUNNEL_LOG; exit 0" INT TERM
+wait

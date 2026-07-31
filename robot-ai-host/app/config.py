@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import platform
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -12,6 +15,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 # Single configuration source of truth. The legacy ``configs/`` directory was
@@ -235,9 +239,18 @@ class Settings(BaseSettings):
     # WebSocket RTVI transport (PR-4): feature-flagged, default disabled.
     websocket_rtvi_enabled: bool = False
 
+    # Runtime: set by start.sh when tunnel is active (avoids wildcard CORS).
+    tunnel_url: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
-        return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        origins = [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        # Auto-append tunnel URL if provided by start.sh
+        if self.tunnel_url:
+            tunnel_origin = self.tunnel_url.rstrip("/")
+            if tunnel_origin not in origins:
+                origins.append(tunnel_origin)
+        return origins
 
     @property
     def scripted_transcripts(self) -> list[str]:

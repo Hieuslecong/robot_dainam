@@ -1,10 +1,19 @@
-# Cloudflared tunnel config for robot-ai-host
-# Fix: noTLSVerify = true vì service dùng self-signed cert
+# Cloudflared named tunnel config cho robot-ai-host
+# Fix: noTLSVerify true vì service dùng self-signed cert
+# 
+# Cấu hình domain:
+#   1. Tạo tunnel: cloudflared tunnel create robot-ai-host
+#   2. Route DNS:   cloudflared tunnel route dns robot-ai-host your-domain.example.com
+#   3. Lưu domain:  echo "your-domain.example.com" > .tunnel-domain
+#   4. Chạy:        ./start.sh (tự động đọc .tunnel-domain)
 tunnel: robot-ai-host
 credentials-file: /Users/minhhieu/.cloudflared/robot-ai-host.json
 
 ingress:
+  # Bắt tất cả hostname → route vào local service
   - hostname: "*"
     service: https://localhost:8000
-    originRequest:
-      noTLSVerify: true
+  - service: http_status:404
+
+originRequest:
+  noTLSVerify: true

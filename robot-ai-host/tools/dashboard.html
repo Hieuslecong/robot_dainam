@@ -121,6 +121,12 @@ function buildLLMTab() {
   return `<div class="tab" id="tab-llm">
     <div class="card"><h2>Model (LLM)</h2>
       <div class="row"><label>Model</label><input id="cfg-LLM_MODEL" value="${s.LLM_MODEL?.value||''}"></div>
+<div class="row"><label>Base URL</label><input id="cfg-LLM_BASE_URL" value="${s.LLM_BASE_URL?.value||''}"></div>
+<div class="row"><label>API Key</label><input type="password" id="cfg-LLM_API_KEY" value="${s.LLM_API_KEY?.value||''}" placeholder="sk-..."></div>
+<div class="row"><label>Temperature</label><input type="number" step="0.1" min="0" max="2" id="cfg-LLM_TEMPERATURE" value="${s.LLM_TEMPERATURE?.value||'0.7'}"></div>
+<div class="row"><label>Max Tokens</label><input type="number" id="cfg-LLM_MAX_TOKENS" value="${s.LLM_MAX_TOKENS?.value||'2048'}"></div>
+<div class="row"><label>Memory Turns</label><input type="number" id="cfg-MAX_MEMORY_TURNS" value="${s.MAX_MEMORY_TURNS?.value||'10'}"></div>
+<div class="row"><label>System Prompt</label><textarea id="cfg-LLM_SYSTEM_PROMPT" rows="3" style="width:100%;resize:vertical">${s.LLM_SYSTEM_PROMPT?.value||''}</textarea></div>
       <div class="row"><label>API Key</label><input type="password" id="cfg-LLM_API_KEY" value="${s.LLM_API_KEY?.value||''}"></div>
       <div class="row"><label>Base URL</label><input id="cfg-LLM_BASE_URL" value="${s.LLM_BASE_URL?.value||''}"></div>
       <div class="row"><label>Temperature</label><input type="range" id="cfg-LLM_TEMPERATURE" min="0.1" max="2.0" step="0.05" value="${s.LLM_TEMPERATURE?.value||'0.2'}"><span class="val" id="val-LLM_TEMPERATURE">${s.LLM_TEMPERATURE?.value||0.2}</span></div>
@@ -134,7 +140,10 @@ function buildSTTTab() {
   const s = settings.STT || {};
   return `<div class="tab" id="tab-stt">
     <div class="card"><h2>Nhận dạng giọng nói (STT)</h2>
-      <div class="row"><label>Candidate</label><input id="cfg-STT_CANDIDATE" value="${s.STT_CANDIDATE?.value||''}"></div>
+      <div class="row"><label>STT Model</label><input id="cfg-STT_MODEL" value="${s.STT_MODEL?.value||''}"></div>
+      <div class="row"><label>STT Language</label><input id="cfg-STT_LANGUAGE" value="${s.STT_LANGUAGE?.value||'vi'}"></div>
+      <div class="row"><label>STT Candidate</label><input id="cfg-STT_CANDIDATE" value="${s.STT_CANDIDATE?.value||''}"></div>
+      <div class="row"><label>Initial Greeting</label><textarea id="cfg-INITIAL_GREETING" rows="2" style="width:100%;resize:vertical">${s.INITIAL_GREETING?.value||''}</textarea></div>
       <div class="actions"><button class="btn primary" onclick="saveGroup('STT')">💾 Lưu STT</button></div>
     </div>
   </div>`;
@@ -156,9 +165,12 @@ function buildSystemTab() {
   const s = settings.SYSTEM || {};
   return `<div class="tab" id="tab-system">
     <div class="card"><h2>Cấu hình hệ thống</h2>
-      <div class="row"><label>Max Sessions</label><input type="number" id="cfg-MAX_SESSIONS" min="1" max="20" value="${s.MAX_SESSIONS?.value||'4'}"></div>
-      <div class="row"><label>STT Max Sessions</label><input type="number" id="cfg-LOCAL_STT_MAX_SESSIONS" min="1" max="20" value="${s.LOCAL_STT_MAX_SESSIONS?.value||'4'}"></div>
-      <div class="row"><label>Heartbeat (s)</label><input type="number" id="cfg-HEARTBEAT_TIMEOUT_SECONDS" min="10" max="300" value="${s.HEARTBEAT_TIMEOUT_SECONDS?.value||'30'}"></div>
+      <div class="row"><label>Max Sessions</label><input type="number" id="cfg-MAX_SESSIONS" value="${s.MAX_SESSIONS?.value||'4'}"></div>
+      <div class="row"><label>Local STT Max</label><input type="number" id="cfg-LOCAL_STT_MAX_SESSIONS" value="${s.LOCAL_STT_MAX_SESSIONS?.value||'2'}"></div>
+      <div class="row"><label>Heartbeat Timeout (s)</label><input type="number" id="cfg-HEARTBEAT_TIMEOUT_SECONDS" value="${s.HEARTBEAT_TIMEOUT_SECONDS?.value||'600'}"></div>
+      <div class="row"><label>Barge-in</label><select id="cfg-ENABLE_BARGE_IN"><option value="true" ${s.ENABLE_BARGE_IN?.value==='true'?'selected':''}>ON</option><option value="false" ${s.ENABLE_BARGE_IN?.value!=='true'?'selected':''}>OFF</option></select></div>
+      <div class="row"><label>Voice Activity Detection</label><select id="cfg-ENABLE_VAD"><option value="true" ${s.ENABLE_VAD?.value==='true'?'selected':''}>ON</option><option value="false" ${s.ENABLE_VAD?.value!=='true'?'selected':''}>OFF</option></select></div>
+      <div class="row"><label>Turn Analysis</label><select id="cfg-TURN_ANALYSIS"><option value="true" ${s.TURN_ANALYSIS?.value==='true'?'selected':''}>ON</option><option value="false" ${s.TURN_ANALYSIS?.value!=='true'?'selected':''}>OFF</option></select></div>
       <div class="actions">
         <button class="btn primary" onclick="saveGroup('SYSTEM')">💾 Lưu hệ thống</button>
         <button class="btn danger" onclick="restartServer()">🔄 Restart Server</button>
@@ -285,6 +297,69 @@ async function init() {
 }
 
 init();
+
+// ── LLM Model Quick Check ──
+async function testLLM() {
+  const btn = document.getElementById('llm-test-btn');
+  const dot = document.getElementById('llm-status-dot');
+  const statusText = document.getElementById('llm-status-text');
+  const resultDiv = document.getElementById('llm-test-result');
+  const latencyDiv = document.getElementById('llm-latency');
+  
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang kiểm tra...';
+  btn.style.background = '#495057';
+  dot.style.background = '#fab005';
+  statusText.textContent = 'Đang kiểm tra...';
+  statusText.style.color = '#fab005';
+  resultDiv.textContent = '';
+  latencyDiv.textContent = '';
+  
+  const start = performance.now();
+  try {
+    const resp = await fetch('/api/model/test');
+    const elapsed = ((performance.now() - start) / 1000).toFixed(2);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    const data = await resp.json();
+    dot.style.background = '#40c057';
+    statusText.textContent = 'Hoạt động ✓';
+    statusText.style.color = '#40c057';
+    resultDiv.innerHTML = `<pre style="margin:4px 0;color:#69db7c;white-space:pre-wrap">${escapeHtml(data.response || JSON.stringify(data, null, 2))}</pre>`;
+    latencyDiv.textContent = `⏱ Phản hồi: ${elapsed}s`;
+    latencyDiv.style.color = '#69db7c';
+  } catch (err) {
+    dot.style.background = '#fa5252';
+    statusText.textContent = 'Lỗi ✗';
+    statusText.style.color = '#fa5252';
+    resultDiv.innerHTML = `<span style="color:#fa5252">${escapeHtml(err.message)}</span>`;
+    latencyDiv.textContent = `⏱ Timeout/fail sau ${((performance.now() - start) / 1000).toFixed(1)}s`;
+    latencyDiv.style.color = '#fa5252';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Kiểm tra LLM';
+    btn.style.background = '#339af0';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Auto-load model name
+(async function loadModelInfo() {
+  try {
+    const resp = await fetch('/api/config');
+    if (resp.ok) {
+      const data = await resp.json();
+      document.getElementById('llm-model-name').textContent =
+        data?.llm?.model || data?.model || 'unknown';
+    }
+  } catch (e) {
+    document.getElementById('llm-model-name').textContent = 'Không tải được';
+  }
+})();
 </script>
 </body>
 </html>
