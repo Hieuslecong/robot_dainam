@@ -108,6 +108,28 @@ def _write_env(updates: dict[str, str]) -> None:
     env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
+# ── Admin token generation (for dashboard login) ──────────────────────
+@router.post("/token")
+async def create_admin_session_token(request: Request) -> dict:
+    """Generate an admin JWT using provisioning secret for dashboard login."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    secret = body.get("provisioning_secret", "")
+    if not secret:
+        raise HTTPException(status_code=400, detail="provisioning_secret required")
+    settings: Settings = _cfg_get_settings()
+    if secret != settings.provisioning_secret:
+        raise HTTPException(status_code=403, detail="Invalid provisioning secret")
+    token = create_admin_token("dashboard", settings,
+        scopes=["admin:settings", "admin:knowledge", "admin:restart"],
+        expiry_seconds=3600)
+    from app.security.audit import audit_log
+    audit_log.log("admin_token_created", principal="dashboard",
+        source_ip=request.client.host if request.client else "-")
+    return {"admin_token": token, "expires_in": 3600}
+
 # ── Routes ──────────────────────────────────────────────────────────────────
 
 @router.get("/settings")

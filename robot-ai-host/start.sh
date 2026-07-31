@@ -1,69 +1,89 @@
 #!/usr/bin/env bash
-# Minimal start script - no set -e, no traps, pure simplicity
+set -euo pipefail
 cd "$(dirname "$0")"
 
 PROFILE="${DEFAULT_PROFILE:-hybrid_local_vi}"
 PORT="${PORT:-8000}"
 LOCK_FILE=".server.lock"
-TUNNEL_LOG="cflog.$$.log"
 
-# Lock check
+cleanup() {
+  echo ""
+  echo "🛑 Shutting down..."
+  kill "$SERVER_PID" 2>/dev/null || true
+  kill "$TUNNEL_PID" 2>/dev/null || true
+  rm -f "$LOCK_FILE"
+  exit 0
+}
+trap cleanup INT TERM EXIT
+
 if [ -f "$LOCK_FILE" ]; then
-    OLD_PID=$(cat "$LOCK_FILE" 2>/dev/null)
-    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-        echo "Another instance running (pid $OLD_PID). Stop it first."
-        exit 1
-    fi
-    rm -f "$LOCK_FILE"
+  echo "❌ Another instance is running (pid $(cat $LOCK_FILE)). Stop it first."
+  exit 1
 fi
+echo $$ > "$LOCK_FILE"
 
-echo ""
-echo "=== Starting Robot AI Host ==="
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🧹 Cleaning..."
+pkill -f "cloudflared tunnel" 2>/dev/null || true
 
-# Start tunnel
-echo "Starting Cloudflare Quick Tunnel..."
-cloudflared tunnel --url http://localhost:$PORT > "$TUNNEL_LOG" 2>&1 &
-TUNNEL_PID=$!
+# ── Start server first ──
+echo "📡 Starting server (profile=$PROFILE, port=$PORT)..."
+PYTHONPATH=. ".venv-hybrid/bin/python" -m app.main --profile "$PROFILE" --port "$PORT" &
+SERVER_PID=$!
 
-# Parse domain
-echo "Waiting for tunnel domain (max 60s)..."
-TUNNEL_URL=""
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
-    FOUND=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)
-    if [ -n "$FOUND" ]; then
-        TUNNEL_URL="$FOUND"
-        export TUNNEL_URL
-        echo "Tunnel ready: $TUNNEL_URL"
-        break
-    fi
-    sleep 2
+# Wait for server
+for i in $(seq 1 15); do
+  if curl -sk "https://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+    echo "   ✅ Server ready"
+    break
+  fi
+  sleep 1
 done
 
-if [ -z "$TUNNEL_URL" ]; then
-    echo "WARNING: No tunnel domain found, continuing anyway..."
-else
-    echo "CORS auto-added: $TUNNEL_URL"
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sudo -n dscacheutil -flushcache 2>/dev/null || true
-        sudo -n killall -HUP mDNSResponder 2>/dev/null || true
-    fi
+if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+  echo "❌ Server failed to start"
+  exit 1
 fi
 
-# Start bot
-echo ""
-echo "Starting bot on port $PORT..."
-PYTHONPATH= .venv/bin/python3 -m app.main \
-    --profile "$PROFILE" \
-    --port "$PORT" \
-    --host 0.0.0.0 &
-SERVER_PID=$!
-echo "$$" > "$LOCK_FILE"
+# ── Start tunnel (with auto-restart on drop) ──
+echo "🌐 Starting tunnel..."
+TUNNEL_ATTEMPT=1
+while true; do
+  echo "   Tunnel attempt $TUNNEL_ATTEMPT..."
+  cloudflared tunnel --url "https://localhost:$PORT" --no-tls-verify --protocol http2 2>&1 | while IFS= read -r line; do
+    echo "$line"
+    # Extract tunnel URL and export for CORS auto-discovery
+    TURL=$(echo "$line" | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1 || true)
+    if [ -n "$TURL" ]; then
+      export TUNNEL_URL="$TURL"
+      # Restart server to pick up new CORS origin
+      if kill -0 "$SERVER_PID" 2>/dev/null; then
+        kill "$SERVER_PID" 2>/dev/null || true
+        sleep 1
+        PYTHONPATH=. ".venv-hybrid/bin/python" -m app.main --profile "$PROFILE" --port "$PORT" &
+        SERVER_PID=$!
+        echo "   ✅ CORS: auto-added $TURL"
+      fi
+    fi
+  done
+  TUNNEL_ATTEMPT=$((TUNNEL_ATTEMPT + 1))
+  echo "   🔄 Tunnel dropped, restarting in 3s..."
+  sleep 3
+done &
+TUNNEL_PID=$!
 
-echo "Server PID: $SERVER_PID | Tunnel PID: $TUNNEL_PID"
-echo "Dashboard: http://localhost:$PORT/dashboard"
-[ -n "$TUNNEL_URL" ] && echo "Public:    $TUNNEL_URL/dashboard"
 echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ Ready!"
+echo ""
+echo "   Health:    https://127.0.0.1:$PORT/health"
+echo "   Robot:     https://127.0.0.1:$PORT/robot/"
+echo "   Dashboard: https://127.0.0.1:$PORT/v1/admin/"
+echo "   CORS:      auto-adds tunnel domain on connect"
+echo ""
+echo "   Model:  $(grep LLM_MODEL .env 2>/dev/null | cut -d= -f2)"
+echo "   Profile: $PROFILE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Press Ctrl+C to stop"
 
-# Wait for any signal
-trap "echo 'Received signal, shutting down...'; kill $SERVER_PID $TUNNEL_PID 2>/dev/null; rm -f $LOCK_FILE $TUNNEL_LOG; exit 0" INT TERM
-wait
+wait "$SERVER_PID"

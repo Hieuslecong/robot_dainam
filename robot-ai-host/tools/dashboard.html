@@ -123,7 +123,8 @@ function buildLLMTab() {
       <div class="row"><label>Model</label><input id="cfg-LLM_MODEL" value="${s.LLM_MODEL?.value||''}"></div>
 <div class="row"><label>Base URL</label><input id="cfg-LLM_BASE_URL" value="${s.LLM_BASE_URL?.value||''}"></div>
 <div class="row"><label>API Key</label><input type="password" id="cfg-LLM_API_KEY" value="${s.LLM_API_KEY?.value||''}" placeholder="sk-..."></div>
-<div class="row"><label>Temperature</label><input type="number" step="0.1" min="0" max="2" id="cfg-LLM_TEMPERATURE" value="${s.LLM_TEMPERATURE?.value||'0.7'}"></div>
+<div class="row"><label>TTS Temperature</label><input type="number" step="0.1" min="0" max="2" id="cfg-VIENEU_TEMPERATURE" value="${s.VIENEU_TEMPERATURE?.value||'0.7'}"></div>
+<div class="actions"><button class="btn primary" onclick="saveGroup('TTS')">💾 Lưu TTS</button></div>
 <div class="row"><label>Max Tokens</label><input type="number" id="cfg-LLM_MAX_TOKENS" value="${s.LLM_MAX_TOKENS?.value||'2048'}"></div>
 <div class="row"><label>Memory Turns</label><input type="number" id="cfg-MAX_MEMORY_TURNS" value="${s.MAX_MEMORY_TURNS?.value||'10'}"></div>
 <div class="row"><label>System Prompt</label><textarea id="cfg-LLM_SYSTEM_PROMPT" rows="3" style="width:100%;resize:vertical">${s.LLM_SYSTEM_PROMPT?.value||''}</textarea></div>
