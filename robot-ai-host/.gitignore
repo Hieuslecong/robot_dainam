@@ -10,8 +10,8 @@ build/
 venv/
 
 # Frontend
-clients/browser/node_modules/
-clients/browser/dist/
+clients/*/node_modules/
+clients/*/dist/
 
 # Environment/secrets
 .env
