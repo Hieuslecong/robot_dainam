@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PROFILE="${DEFAULT_PROFILE:-hybrid_local_vi}"
-PORT="${PORT:-8000}"
+PORT="${PORT:-8765}"
 LOCK_FILE=".server.lock"
 
 SERVER_PID=""
@@ -50,7 +50,7 @@ fi
 mkdir -p logs
 rm -f logs/tunnel_url.txt
 echo "📡 Starting server (profile=$PROFILE, port=$PORT)..."
-PYTHONPATH=. ".venv-hybrid/bin/python" -m app.main --profile "$PROFILE" --port "$PORT" >> logs/server.log 2>&1 &
+.venv/bin/python -m app.main --profile "$PROFILE" --port "$PORT" >> logs/server.log 2>&1 &
 SERVER_PID=$!
 
 # Wait for server
