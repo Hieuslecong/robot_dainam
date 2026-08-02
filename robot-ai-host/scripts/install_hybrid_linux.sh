@@ -17,6 +17,14 @@ uv pip install --python .venv-hybrid/bin/python \
   huggingface_hub \
   vieneu
 
+# Install NVIDIA CUDA 12 runtime libs for ctranslate2 (faster-whisper) GPU acceleration if GPU is present
+if command -v nvidia-smi &>/dev/null; then
+  echo "🟢 NVIDIA GPU detected. Installing CUDA 12 & cuDNN runtime for faster-whisper..."
+  uv pip install --python .venv-hybrid/bin/python \
+    nvidia-cublas-cu12 \
+    nvidia-cudnn-cu12
+fi
+
 uv venv .venv-piper --python "$PYTHON_VERSION"
 uv pip install --python .venv-piper/bin/python "piper-tts[http]==${PIPER_VERSION}"
 mkdir -p models/piper
@@ -26,8 +34,12 @@ mkdir -p models/piper
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "[PASS] Hybrid Linux environments installed successfully!"
 echo ""
-echo "📌 Note for Linux system dependencies:"
-echo "   Ensure system libraries are installed (Ubuntu/Debian):"
+echo "📌 System Dependencies (Ubuntu/Debian):"
 echo "   sudo apt-get update && sudo apt-get install -y libgomp1 libsndfile1 ffmpeg"
+echo ""
+echo "💡 For NVIDIA GPU acceleration (.env config):"
+echo "   WHISPER_DEVICE=cuda"
+echo "   WHISPER_COMPUTE_TYPE=float16"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 
