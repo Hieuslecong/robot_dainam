@@ -153,6 +153,9 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
             raise RuntimeError(f"Invalid DEFAULT_PROFILE: {exc}") from exc
 
         try:
+            from app.pipecat_runtime.aiortc_patch import apply_aiortc_patches
+            apply_aiortc_patches()
+
             from pipecat.transports.smallwebrtc.request_handler import (
                 SmallWebRTCRequestHandler,
             )

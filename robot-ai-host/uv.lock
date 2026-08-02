@@ -1522,6 +1522,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "structlog" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "uvloop" },
 ]
 
 [package.optional-dependencies]
@@ -1546,6 +1547,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "structlog", specifier = ">=24.0,<25" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1" },
+    { name = "uvloop", specifier = ">=0.19" },
 ]
 provides-extras = ["dev"]
 
