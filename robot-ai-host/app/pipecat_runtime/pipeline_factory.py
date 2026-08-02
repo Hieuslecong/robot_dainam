@@ -295,8 +295,8 @@ def _create_local_whisper_stt(*, settings: Settings, profile: RuntimeProfile):
             )
         if candidate.engine == "faster_whisper":
             return WhisperSTTService(
-                device=settings.whisper_device,
-                compute_type=settings.whisper_compute_type,
+                device=settings.resolved_whisper_device,
+                compute_type=settings.resolved_whisper_compute_type,
                 settings=WhisperSTTService.Settings(
                     model=candidate.model,
                     language=Language.VI,
@@ -326,8 +326,8 @@ def _create_local_whisper_stt(*, settings: Settings, profile: RuntimeProfile):
         )
 
     return WhisperSTTService(
-        device=settings.whisper_device,
-        compute_type=settings.whisper_compute_type,
+        device=settings.resolved_whisper_device,
+        compute_type=settings.resolved_whisper_compute_type,
         settings=WhisperSTTService.Settings(
             model=profile.stt.model or settings.whisper_model,
             language=Language.VI,

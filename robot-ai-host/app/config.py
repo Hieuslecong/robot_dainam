@@ -292,6 +292,36 @@ class Settings(BaseSettings):
             return "mlx"
         return "faster-whisper"
 
+    @property
+    def resolved_whisper_device(self) -> str:
+        if self.whisper_device != "auto":
+            return self.whisper_device
+        if platform.system() == "Darwin":
+            return "cpu"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+        except ImportError:
+            import subprocess
+            try:
+                res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if res.returncode == 0:
+                    return "cuda"
+            except Exception:
+                pass
+        return "cpu"
+
+    @property
+    def resolved_whisper_compute_type(self) -> str:
+        if self.whisper_compute_type != "default":
+            return self.whisper_compute_type
+        device = self.resolved_whisper_device
+        if device == "cuda":
+            return "float16"
+        return "int8"
+
+
 
 @lru_cache
 def get_settings() -> Settings:
