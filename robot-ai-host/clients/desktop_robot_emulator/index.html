@@ -12,37 +12,16 @@
       <div id="robot" class="robot" data-state="offline" data-emotion="neutral">
         <div class="aura"></div>
         <div id="head" class="head">
-          <span class="bump b1"></span>
-          <span class="bump b2"></span>
-          <span class="bump b3"></span>
-          <span class="bump b4"></span>
+          <span class="bump b1"></span><span class="bump b2"></span><span class="bump b3"></span><span class="bump b4"></span>
           <div class="face">
-            <div class="brows">
-              <span class="brow left"></span>
-              <span class="brow right"></span>
-            </div>
+            <div class="brows"><span class="brow left"></span><span class="brow right"></span></div>
             <div class="eyes">
-              <div class="eye left">
-                <div class="iris"><div class="pupil"></div></div>
-                <div class="shine big"></div><div class="shine small"></div>
-                <div class="eyelid top"></div><div class="eyelid bottom"></div>
-              </div>
-              <div class="eye right">
-                <div class="iris"><div class="pupil"></div></div>
-                <div class="shine big"></div><div class="shine small"></div>
-                <div class="eyelid top"></div><div class="eyelid bottom"></div>
-              </div>
+              <div class="eye left"><div class="iris"><div class="pupil"></div></div><div class="shine big"></div><div class="shine small"></div><div class="eyelid top"></div><div class="eyelid bottom"></div></div>
+              <div class="eye right"><div class="iris"><div class="pupil"></div></div><div class="shine big"></div><div class="shine small"></div><div class="eyelid top"></div><div class="eyelid bottom"></div></div>
             </div>
-            <div class="cheeks">
-              <span class="cheek left"></span>
-              <span class="cheek right"></span>
-            </div>
-            <div class="mouth-wrap">
-              <div id="mouth" class="mouth"><div class="tongue"></div></div>
-            </div>
-            <span class="tear left"></span>
-            <span class="tear right"></span>
-            <span class="sweat"></span>
+            <div class="cheeks"><span class="cheek left"></span><span class="cheek right"></span></div>
+            <div class="mouth-wrap"><div id="mouth" class="mouth"><div class="tongue"></div></div></div>
+            <span class="tear left"></span><span class="tear right"></span><span class="sweat"></span>
             <div class="think-dots"><i></i><i></i><i></i></div>
             <div class="zzz"><span>Z</span><span>z</span><span>z</span></div>
           </div>
@@ -54,7 +33,7 @@
       </div>
 
       <div class="caption">
-        <p id="stateLabel" class="state-label">Chưa kết nối</p>
+        <p id="stateLabel" class="state-label">Đang kết nối...</p>
         <p id="behaviorLabel" class="behavior-label">—</p>
         <p id="lastText" class="last-text"></p>
       </div>
@@ -86,5 +65,17 @@
       <audio id="botAudio" autoplay playsinline></audio>
     </main>
     <script type="module" src="/src/main.ts"></script>
+    <!-- Auto-connect -->
+    <script type="module">
+      import { PipecatClient } from "/node_modules/@pipecat-ai/client-js/dist/index.module.js";
+      // Wait for page to settle, then trigger hidden connect button
+      setTimeout(() => {
+        const srv = document.getElementById('serverUrl');
+        const dev = document.getElementById('deviceId');
+        if (srv) srv.value = window.location.origin;
+        if (dev) dev.value = 'robot-' + Math.random().toString(36).slice(2,8);
+        document.getElementById('connect')?.click();
+      }, 500);
+    </script>
   </body>
 </html>

@@ -31,11 +31,19 @@ const robot = el<HTMLDivElement>("robot");
 const head = el<HTMLDivElement>("head");
 const mouth = el<HTMLDivElement>("mouth");
 const stateLabel = el<HTMLParagraphElement>("stateLabel");
-const behaviorLabel = el<HTMLParagraphElement>("behaviorLabel");
 const lastText = el<HTMLParagraphElement>("lastText");
 const botAudio = el<HTMLAudioElement>("botAudio");
 
 serverUrl.value = window.location.origin;
+
+// Auto-increment device_id so each connection gets a unique ID (e.g. robot-face-001, robot-face-002)
+if (!deviceId.value || deviceId.value === "robot-face-001") {
+  let counter = parseInt(localStorage.getItem("robot_device_counter") || "0", 10) + 1;
+  localStorage.setItem("robot_device_counter", counter.toString());
+  deviceId.value = `robot-face-${String(counter).padStart(3, "0")}`;
+}
+
+
 
 let client: PipecatClient | undefined;
 let token = "";

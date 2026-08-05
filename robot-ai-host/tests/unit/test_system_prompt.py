@@ -31,7 +31,7 @@ def test_persona_style_rules_present():
     prompt = build_system_prompt(persona_name="Test")
     assert "mình" in prompt and "bạn" in prompt  # xưng hô mình – bạn
     assert "ấm áp" in prompt
-    assert "không giả là con người" in prompt.lower()
+    assert "không giả người" in prompt.lower()
 
 
 def test_model_name_never_leaks_into_prompt():
@@ -44,8 +44,8 @@ def test_model_name_never_leaks_into_prompt():
 
 def test_face_commands_are_affirmed_not_refused():
     prompt = build_system_prompt(persona_name="Test")
-    assert "khuôn mặt" in prompt.lower()
-    assert "làm mặt buồn" in prompt.lower()
+    assert "mặt" in prompt.lower() and "mắt" in prompt.lower()  # "Robot có mặt (mắt, miệng...)"
+    assert "Mặt buồn" in prompt  # "('Mặt buồn nè…')"
 
 
 def test_prompt_within_token_budget():

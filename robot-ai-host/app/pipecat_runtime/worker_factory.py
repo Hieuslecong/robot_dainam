@@ -156,10 +156,18 @@ async def create_worker_for_session(
     async def on_client_connected(transport: Any, client: Any) -> None:
         logger.info("client_connected", session_id=session_id, device_id=device_id)
         if auto_intro:
-            # Fixed intro spoken instantly — no LLM round-trip on connect.
             name = settings.persona_name or "Mây Mây"
             intro = f"Mình là {name}, mình có thể giúp gì cho bạn nè?"
             bundle.context.add_message({"role": "assistant", "content": intro})
+            # VieNeu warm‑up runs in a background task — wait for it.
+            # Non‑VieNeu profiles (Piper, mock) have no engine → skip.
+            import asyncio as _asyncio
+            engine = getattr(bundle, "vieneu_engine", None)
+            if engine is not None:
+                for _ in range(16):
+                    if engine.ready:
+                        break
+                    await _asyncio.sleep(0.5)
             await worker.queue_frames([TTSSpeakFrame(intro)])
 
     runner = WorkerRunner(handle_sigint=False)

@@ -16,7 +16,11 @@ PIPER_VOICE="${PIPER_VOICE:-vi_VN-vais1000-medium}"
 uv python install "$PYTHON_VERSION"
 UV_PROJECT_ENVIRONMENT=.venv-hybrid uv sync --frozen --python "$PYTHON_VERSION"
 uv pip install --python .venv-hybrid/bin/python \
-  'pipecat-ai[whisper,mlx-whisper]==1.6.0'
+  'pipecat-ai[whisper,mlx-whisper]==1.6.0' \
+  'piper-tts>=1.5.0' \
+  'sherpa-onnx' \
+  'vieneu' \
+  'huggingface-hub'
 
 uv venv .venv-piper --python "$PYTHON_VERSION"
 uv pip install --python .venv-piper/bin/python "piper-tts[http]==${PIPER_VERSION}"

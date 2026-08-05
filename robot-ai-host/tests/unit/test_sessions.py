@@ -15,6 +15,7 @@ def settings():
         provisioning_secret="test",
         jwt_secret_key="test-key-32-bytes-minimum-value",
         max_sessions=4,
+        local_stt_max_sessions=1,
         heartbeat_timeout_seconds=5,
     )
 

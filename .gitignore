@@ -1,4 +1,10 @@
-# Local runtime evidence — not source
+# Local runtime evidence not source
 artifacts/
 .claude/
 .DS_Store
+cflog.*.log
+
+# Documents (not source code)
+*.docx
+~$*.docx
+

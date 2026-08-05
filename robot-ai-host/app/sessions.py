@@ -1,10 +1,11 @@
-"""Session management: in-memory session registry with lifecycle."""
+"""Session management: in-memory session registry and lifecycle."""
 
 from __future__ import annotations
 
 import asyncio
 import time
 import uuid
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -26,6 +27,25 @@ class SessionState(str, Enum):
     ERROR = "error"
 
 
+@dataclass
+class SessionRuntimeRecord:
+    """Typed runtime record for a single session (PR-2.1).
+
+    Replaces the untyped dict[str, Any] _workers dict.
+    """
+
+    worker: Any = None  # PipelineWorker | None
+    runner: Any = None  # WorkerRunner | None
+    task: asyncio.Task | None = None
+    bundle: Any = None  # PipelineBundle | None
+    connection: Any = None
+    webrtc_handler: Any = None
+    pc_id: str | None = None
+    claimed: bool = False
+    closing: bool = False
+    created_at: float = field(default_factory=time.monotonic)
+
+
 class SessionInfo(BaseModel):
     """Information about an active session."""
 
@@ -39,21 +59,33 @@ class SessionInfo(BaseModel):
     language: str = "vi-VN"
     cleanup_status: str = "none"
     metrics_summary: dict[str, Any] | None = None
+    ice_servers: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SessionManager:
     """In-memory session registry.
 
     Thread-safe via asyncio.Lock. Manages session lifecycle, heartbeats,
-    ownership validation, and cleanup of expired sessions.
+    ownership validation, cleanup of expired sessions.
+
+    PR-2 changes:
+    - Typed SessionRuntimeRecord replaces dict[str, Any]
+    - Atomic worker claim (claim_worker_slot / complete_worker_registration)
+    - Retention policy (CLOSED_RETENTION / ERROR_RETENTION / MAX_RETAINED)
+    - Idempotent cleanup
     """
+
+    # PR-2.6: retention policy
+    CLOSED_RETENTION_SECONDS: float = 300.0   # 5 min
+    ERROR_RETENTION_SECONDS: float = 600.0    # 10 min
+    MAX_RETAINED_SESSION_RECORDS: int = 100
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._sessions: dict[str, SessionInfo] = {}
         self._lock = asyncio.Lock()
-        # Store workers/runners by session_id for cleanup
-        self._workers: dict[str, Any] = {}
+        # PR-2.1: typed runtime records
+        self._runtimes: dict[str, SessionRuntimeRecord] = {}
 
     async def create_session(
         self,
@@ -61,6 +93,7 @@ class SessionManager:
         profile: str,
         language: str = "vi-VN",
         transport: str = "webrtc",
+        ice_servers: list[dict[str, Any]] | None = None,
     ) -> SessionInfo:
         """Create a new session.
 
@@ -113,6 +146,7 @@ class SessionManager:
                 profile=profile,
                 language=language,
                 transport=transport,
+                ice_servers=ice_servers or [],
             )
             self._sessions[session_id] = session
             logger.info(
@@ -178,33 +212,30 @@ class SessionManager:
             session.state = SessionState.CLOSING
             session.cleanup_status = "pending"
 
-        # Cleanup worker outside of lock
-        worker_info = self._workers.pop(session_id, None)
-        if worker_info:
+        # PR-2.5: idempotent cleanup using SessionRuntimeRecord
+        record = self._runtimes.get(session_id)
+        if record and not record.closing:
+            record.closing = True
             try:
-                runner = worker_info.get("runner")
-                worker = worker_info.get("worker")
+                runner = record.runner
+                worker = record.worker
+                bundle = record.bundle
                 if runner and hasattr(runner, "cancel"):
                     await runner.cancel(reason="session_closed")
                 elif worker and hasattr(worker, "cancel"):
                     await worker.cancel()
-                bundle = worker_info.get("bundle")
                 if bundle and hasattr(bundle, "aclose"):
                     await bundle.aclose()
                 logger.info("worker_cancelled", session_id=session_id)
             except Exception as exc:
                 logger.error("worker_cancel_error", session_id=session_id, error=str(exc))
-                bundle = worker_info.get("bundle")
-                if bundle and hasattr(bundle, "aclose"):
+            finally:
+                # Release resources
+                if record.bundle and hasattr(record.bundle, "aclose"):
                     try:
-                        await bundle.aclose()
+                        await record.bundle.aclose()
                     except Exception as cleanup_exc:
-                        logger.error(
-                            "pipeline_resource_cleanup_error",
-                            session_id=session_id,
-                            error=str(cleanup_exc),
-                        )
-
+                        logger.error("pipeline_resource_cleanup_error", session_id=session_id, error=str(cleanup_exc))
         async with self._lock:
             session = self._sessions.get(session_id)
             if session:
@@ -218,7 +249,7 @@ class SessionManager:
         return list(self._sessions.values())
 
     async def cleanup_expired(self) -> list[str]:
-        """Clean up sessions whose heartbeat has timed out.
+        """Clean sessions whose heartbeat timed out, and prune retained closed records.
 
         Returns:
             List of closed session IDs.
@@ -238,7 +269,40 @@ class SessionManager:
             logger.warning("session_heartbeat_expired", session_id=sid)
             await self.close_session(sid)
             closed.append(sid)
+
+        # PR-2.6: prune retained closed/error sessions
+        await self._prune_retained()
+
         return closed
+
+    async def _prune_retained(self) -> None:
+        """PR-2.6: Remove old closed/error sessions and their runtime records."""
+        now = time.time()
+        async with self._lock:
+            to_remove: list[str] = []
+            for sid, sess in self._sessions.items():
+                if sess.state == SessionState.CLOSED:
+                    if now - sess.created_at > self.CLOSED_RETENTION_SECONDS:
+                        to_remove.append(sid)
+                elif sess.state == SessionState.ERROR:
+                    if now - sess.created_at > self.ERROR_RETENTION_SECONDS:
+                        to_remove.append(sid)
+
+            # Enforce max retained records
+            closed_records = [
+                sid for sid, sess in self._sessions.items()
+                if sess.state in (SessionState.CLOSED, SessionState.ERROR)
+            ]
+            if len(closed_records) > self.MAX_RETAINED_SESSION_RECORDS:
+                # Remove oldest first
+                closed_records.sort(key=lambda sid: self._sessions[sid].created_at)
+                overflow = closed_records[:len(closed_records) - self.MAX_RETAINED_SESSION_RECORDS]
+                to_remove.extend(overflow)
+
+            for sid in set(to_remove):
+                self._sessions.pop(sid, None)
+                self._runtimes.pop(sid, None)
+                logger.info("session_pruned", session_id=sid)
 
     def validate_ownership(self, session_id: str, device_id: str) -> bool:
         """Check if device_id owns the session."""
@@ -254,22 +318,42 @@ class SessionManager:
         runner: Any = None,
         bundle: Any = None,
     ) -> None:
-        """Register one PipelineWorker for a session.
+        """Register a PipelineWorker for a session (PR-2.2: atomic via claim_worker_slot).
 
         A second worker for the same session would create duplicate audio/context
-        pipelines and leak resources, so it is rejected explicitly.
+        pipelines and leak resources, so this is rejected explicitly.
         """
-        if session_id in self._workers:
+        if session_id in self._runtimes and self._runtimes[session_id].claimed:
             raise ValueError(f"Worker already registered for session {session_id}")
-        self._workers[session_id] = {
-            "worker": worker,
-            "runner": runner,
-            "bundle": bundle,
-        }
+        record = self._runtimes.setdefault(session_id, SessionRuntimeRecord())
+        record.worker = worker
+        record.runner = runner
+        record.bundle = bundle
+        record.claimed = True
+
+    async def claim_worker_slot(self, session_id: str) -> SessionRuntimeRecord:
+        """PR-2.2: Atomically claim a worker slot (must hold lock)."""
+        if session_id in self._runtimes and self._runtimes[session_id].claimed:
+            raise ValueError(f"Worker slot already claimed for session {session_id}")
+        record = self._runtimes.setdefault(session_id, SessionRuntimeRecord())
+        record.claimed = True
+        record.created_at = time.monotonic()
+        return record
+
+    async def complete_worker_registration(
+        self,
+        session_id: str,
+        record: SessionRuntimeRecord,
+    ) -> None:
+        """PR-2.2: Complete registration after worker is created."""
+        if not record.claimed:
+            raise ValueError(f"Worker slot not claimed for session {session_id}")
+        # record is already in _runtimes; nothing extra needed
 
     def has_worker(self, session_id: str) -> bool:
-        """Return whether a voice worker is already registered for a session."""
-        return session_id in self._workers
+        """Return whether a voice worker is registered for the session."""
+        record = self._runtimes.get(session_id)
+        return record is not None and record.claimed
 
     @property
     def active_count(self) -> int:

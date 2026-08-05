@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+
+try:
+    import uvloop  # type: ignore[import-untyped]
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,9 +25,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import (
     create_access_token,
+    create_connection_token,
     get_current_device,
     verify_connection_token,
 )
+from app.security.rate_limit import RateLimitMiddleware
+from app.security.tickets import TicketStore
+from app.security.audit import audit_log, set_request_id
 from app.config import (
     RuntimeProfile,
     Settings,
@@ -37,6 +47,7 @@ from app.sessions import SessionManager, SessionState
 logger = get_logger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BROWSER_DIST_DIR = ROOT_DIR / "clients" / "browser" / "dist"
+BROWSER_SRC_DIR = ROOT_DIR / "clients" / "browser"
 ROBOT_DIST_DIR = ROOT_DIR / "clients" / "desktop_robot_emulator" / "dist"
 
 
@@ -69,6 +80,10 @@ class CreateSessionResponse(BaseModel):
     expires_in: int
     webrtcUrl: str
     webrtc: dict[str, Any]
+    turnExpiresAt: float | None = None
+    iceTransportPolicy: str = "all"
+    # Pipecat client-js reads iceConfig at top level of connect params.
+    iceConfig: dict[str, Any] | None = None
 
 
 class OfferRequest(BaseModel):
@@ -94,6 +109,9 @@ class PatchOfferRequest(BaseModel):
     candidates: list[IceCandidateRequest]
 
 
+from app.pipecat_runtime.ice_utils import parse_ice_servers as _parse_ice_servers
+
+
 class HeartbeatResponse(BaseModel):
     status: str
     timestamp: float
@@ -107,6 +125,8 @@ class HealthResponse(BaseModel):
     default_profile: str
     webrtc_available: bool
     browser_built: bool
+    tunnel_url: str | None = None
+
 
 
 def create_app(settings_override: Settings | None = None) -> FastAPI:
@@ -119,6 +139,7 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.session_manager = SessionManager(settings)
         app.state.latency_tracker = LatencyTracker(settings.metrics_jsonl_path)
+        app.state.ticket_store = TicketStore()
 
         try:
             default_profile = load_profile(settings.default_profile)
@@ -132,6 +153,9 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
             raise RuntimeError(f"Invalid DEFAULT_PROFILE: {exc}") from exc
 
         try:
+            from app.pipecat_runtime.aiortc_patch import apply_aiortc_patches
+            apply_aiortc_patches()
+
             from pipecat.transports.smallwebrtc.request_handler import (
                 SmallWebRTCRequestHandler,
             )
@@ -173,18 +197,52 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
-    )
+            CORSMiddleware,
+            allow_origins=settings.cors_origin_list,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    app.add_middleware(RateLimitMiddleware)
+
+    # Audit request ID middleware
+    @app.middleware("http")
+    async def audit_request_id_middleware(request: Request, call_next):
+        rid = request.headers.get("X-Request-ID", "")
+        set_request_id(rid)
+        response = await call_next(request)
+        return response
 
     register_routes(app)
+
+    # Admin API (settings, knowledge, voices, restart)
+    from app.admin import router as admin_router
+
+    app.include_router(admin_router)
+
+    # WebSocket RTVI transport (PR-4: feature-flagged)
+    from app.transports.websocket_rtvi import register_websocket_routes
+
+    register_websocket_routes(app)
+    # Voice chat client at /client/chat (original Pipecat web client)
     if BROWSER_DIST_DIR.is_dir():
-        app.mount("/client", StaticFiles(directory=BROWSER_DIST_DIR, html=True), name="client")
+        app.mount("/client/chat", StaticFiles(directory=BROWSER_DIST_DIR, html=True), name="chat")
     if ROBOT_DIST_DIR.is_dir():
         app.mount("/robot", StaticFiles(directory=ROBOT_DIST_DIR, html=True), name="robot")
+    
+    # Mount Dashboard HTML at /dashboard and /v1/admin/dashboard
+    dashboard_file = ROOT_DIR / "dashboard.html"
+    if dashboard_file.is_file():
+        from fastapi.responses import FileResponse as _FR
+
+        @app.get("/dashboard", include_in_schema=False)
+        async def serve_dashboard():
+            return _FR(dashboard_file, media_type="text/html")
+
+        @app.get("/v1/admin/dashboard", include_in_schema=False)
+        async def serve_admin_dashboard():
+            return _FR(dashboard_file, media_type="text/html")
+
     return app
 
 
@@ -207,6 +265,15 @@ def register_routes(app: FastAPI) -> None:
     async def health(request: Request) -> HealthResponse:
         manager: SessionManager = request.app.state.session_manager
         settings: Settings = request.app.state.settings
+
+        t_url = None
+        t_file = ROOT_DIR / "logs" / "tunnel_url.txt"
+        if t_file.exists():
+            try:
+                t_url = t_file.read_text(encoding="utf-8").strip() or None
+            except Exception:
+                t_url = None
+
         return HealthResponse(
             status="ok",
             version="0.1.0",
@@ -215,7 +282,9 @@ def register_routes(app: FastAPI) -> None:
             default_profile=settings.default_profile,
             webrtc_available=request.app.state.webrtc_handler is not None,
             browser_built=BROWSER_DIST_DIR.is_dir(),
+            tunnel_url=t_url,
         )
+
 
     @app.get("/v1/profiles")
     async def profiles() -> dict[str, Any]:
@@ -274,20 +343,51 @@ def register_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=422, detail="Transport/profile mismatch")
 
         manager: SessionManager = request.app.state.session_manager
+        # ── Build ICE servers first (needed by both session + response) ──
+        ice_servers: list[dict[str, Any]] = []
+        turn_expires_at: float | None = None
+        try:
+            from app.pipecat_runtime.turn_credentials import get_turn_service
+
+            turn_service = get_turn_service(settings)
+            if turn_service.use_cloudflare:
+                cf_cred = await turn_service.generate_credentials()
+                if cf_cred:
+                    ice_servers = turn_service.build_ice_servers(cf_cred)
+                    turn_expires_at = time.time() + cf_cred.ttl
+                    logger.info(
+                        "turn_credential_generated",
+                        session_id=None,  # not yet created
+                        expires_at=turn_expires_at,
+                        urls_count=sum(
+                            1 + (len(s.get("urls", [])) if isinstance(s.get("urls"), list) else 0)
+                            for s in ice_servers
+                        ),
+                    )
+                else:
+                    ice_servers = turn_service.build_ice_servers()
+            else:
+                ice_servers = turn_service.build_ice_servers()
+        except Exception as exc:
+            logger.warning("turn_service_error", error=str(exc))
+            ice_servers = _parse_ice_servers(settings.webrtc_ice_servers)
+
         try:
             session = await manager.create_session(
                 device_id=payload.device_id,
                 profile=profile.name,
                 language=profile.language,
                 transport=profile.transport,
+                ice_servers=ice_servers,
             )
         except ValueError as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
 
-        connection_token = create_access_token(
+        connection_token = create_connection_token(
             payload.device_id,
             settings,
             session_id=session.session_id,
+            transport="webrtc",
             expiry_seconds=min(600, settings.jwt_expiry_seconds),
         )
         base = str(request.base_url).rstrip("/")
@@ -301,13 +401,20 @@ def register_routes(app: FastAPI) -> None:
             device_id=session.device_id,
             profile=session.profile,
         )
-        return CreateSessionResponse(
+        response = CreateSessionResponse(
             session_id=session.session_id,
             status=session.state.value,
             expires_in=settings.jwt_expiry_seconds,
             webrtcUrl=webrtc_url,
-            webrtc={"url": webrtc_url, "ice_servers": []},
+            webrtc={
+                "url": webrtc_url,
+                "ice_servers": ice_servers,
+            },
+            turnExpiresAt=turn_expires_at,
+            iceTransportPolicy=settings.webrtc_ice_policy,
+            iceConfig={"iceServers": ice_servers},
         )
+        return response
 
     @app.get("/v1/sessions/{session_id}")
     async def get_session(
@@ -435,6 +542,16 @@ def register_routes(app: FastAPI) -> None:
             restart_pc=payload.restart_pc,
             request_data=payload.request_data,
         )
+        # Pass ICE servers from session to handler so server-side also
+        # uses TURN (not just the client). Without this, the server only
+        # advertises host candidates and ICE can't complete over NAT.
+        if session.ice_servers:
+            from pipecat.transports.smallwebrtc.connection import IceServer
+
+            ice_servers_typed: list[IceServer] = []
+            for s in session.ice_servers:
+                ice_servers_typed.append(IceServer(**s))
+            handler.update_ice_servers(ice_servers_typed)
         try:
             answer = await handler.handle_web_request(small_request, connection_callback)
         except Exception as exc:
@@ -502,15 +619,23 @@ def register_routes(app: FastAPI) -> None:
         await handler.handle_patch_request(patch)
         return {"status": "success"}
 
-    # --- Memory control API (spec 13.4) — device-authenticated -------------
+    # ── Memory control API (PR-1: disabled by default, consent required) ──
     from app.core.memory import MemoryRefused, MemoryStore
 
     memory_store = MemoryStore()
 
+    def _check_memory_enabled(request: Request) -> None:
+        """Raise 403 if persistent memory is disabled."""
+        settings: Settings = request.app.state.settings
+        if not settings.persistent_user_memory:
+            raise HTTPException(status_code=403, detail="Persistent memory is disabled")
+
     @app.get("/v1/memory/{user_id}")
     async def memory_view(
-        user_id: str, device: dict[str, Any] = Depends(get_current_device)
+        user_id: str, request: Request, device: dict[str, Any] = Depends(get_current_device)
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
+        audit_log.log("memory_view", principal=device["device_id"], target=f"user:{user_id}")
         return memory_store.view(user_id)
 
     @app.post("/v1/memory/{user_id}")
@@ -519,6 +644,7 @@ def register_routes(app: FastAPI) -> None:
         request: Request,
         device: dict[str, Any] = Depends(get_current_device),
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
         body = await request.json()
         try:
             item = memory_store.remember(
@@ -529,18 +655,23 @@ def register_routes(app: FastAPI) -> None:
             )
         except MemoryRefused as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        audit_log.log("memory_remember", principal=device["device_id"], target=f"user:{user_id}")
         return {"stored": item}
 
     @app.delete("/v1/memory/{user_id}/{kind}")
     async def memory_delete_one(
-        user_id: str, kind: str, device: dict[str, Any] = Depends(get_current_device)
+        user_id: str, kind: str, request: Request, device: dict[str, Any] = Depends(get_current_device)
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
+        audit_log.log("memory_delete_one", principal=device["device_id"], target=f"user:{user_id}/{kind}")
         return {"deleted": memory_store.delete_one(user_id, kind)}
 
     @app.delete("/v1/memory/{user_id}")
     async def memory_delete_all(
-        user_id: str, device: dict[str, Any] = Depends(get_current_device)
+        user_id: str, request: Request, device: dict[str, Any] = Depends(get_current_device)
     ) -> dict[str, Any]:
+        _check_memory_enabled(request)
+        audit_log.log("memory_delete_all", principal=device["device_id"], target=f"user:{user_id}")
         memory_store.delete_all(user_id)
         return {"deleted": True}
 
@@ -550,8 +681,10 @@ def register_routes(app: FastAPI) -> None:
         request: Request,
         device: dict[str, Any] = Depends(get_current_device),
     ) -> dict[str, Any]:
-        body = await request.json()
-        memory_store.set_disabled(user_id, bool(body.get("disabled", True)))
+        _check_memory_enabled(request)
+        audit_log.log("memory_disable", principal=device["device_id"], target=f"user:{user_id}")
+        memory_store.disable(user_id)
+        return {"disabled": True}
         return {"disabled": bool(body.get("disabled", True))}
 
     @app.get("/v1/metrics")
@@ -587,147 +720,65 @@ def register_routes(app: FastAPI) -> None:
             "fallbacks": info.fallbacks,
         }
 
-    @app.post("/api/settings")
-    async def update_settings(request: Request) -> dict[str, Any]:
-        """Save LLM settings to .env and update in-memory config."""
-        import json as _json
+    # ── Connection ticket (PR-1: one-time, single-use, TTL 30s) ──────
+    @app.post("/v1/sessions/{session_id}/connection-ticket")
+    async def connection_ticket(
+        session_id: str,
+        request: Request,
+        device: dict[str, Any] = Depends(get_current_device),
+        transport: str = Query("webrtc", pattern="^(webrtc|websocket)$"),
+    ) -> dict[str, Any]:
+        """Issue a one-time connection ticket for WebRTC/WebSocket.
 
-        body = await request.json()
+        Ticket is opaque, single-use, TTL 30s, bound to device+session+transport.
+        Replaces the old pattern of embedding JWT in query strings.
+        """
+        from app.security.tickets import TicketStore
+
         settings: Settings = request.app.state.settings
-        env_path = ROOT_DIR / ".env"
-
-        updates = {}
-        for key, new_val in body.items():
-            if new_val is None:
-                continue
-            if key == "llm_model":
-                updates["LLM_MODEL"] = str(new_val)
-                settings.llm_model = str(new_val)
-            elif key == "llm_base_url":
-                updates["LLM_BASE_URL"] = str(new_val)
-                settings.llm_base_url = str(new_val)
-            elif key == "llm_api_key":
-                updates["LLM_API_KEY"] = str(new_val)
-                settings.llm_api_key = str(new_val)
-            elif key == "llm_temperature":
-                updates["LLM_TEMPERATURE"] = str(new_val)
-                settings.llm_temperature = float(new_val)
-            elif key == "llm_max_tokens":
-                updates["LLM_MAX_TOKENS"] = str(new_val)
-                settings.llm_max_tokens = int(new_val)
-
-        if updates and env_path.exists():
-            lines = env_path.read_text().splitlines(keepends=True)
-            new_lines = []
-            updated = set()
-            for line in lines:
-                stripped = line.strip()
-                if stripped and not stripped.startswith("#") and "=" in stripped:
-                    key = stripped.split("=", 1)[0].strip()
-                    if key in updates:
-                        new_lines.append(f"{key}={updates[key]}\n")
-                        updated.add(key)
-                        continue
-                new_lines.append(line)
-            for key, val in updates.items():
-                if key not in updated:
-                    new_lines.append(f"{key}={val}\n")
-            env_path.write_text("".join(new_lines))
-
-        return {"status": "saved", "updated": list(updates.keys())}
-
-    @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request) -> HTMLResponse:
-        """Local-only settings UI for LLM config and assistant profile."""
-        settings: Settings = request.app.state.settings
-        masked_key = (
-            settings.resolved_llm_api_key[:4] + "****"
-            if len(settings.resolved_llm_api_key) > 4
-            else "****"
+        store: TicketStore = request.app.state.ticket_store
+        ticket = store.issue(
+            device_id=device["device_id"],
+            session_id=session_id,
+            transport=transport,
+            origin=request.headers.get("origin"),
         )
-        html = f"""<!doctype html>
-<html lang="vi">
-<head><meta charset="UTF-8"><title>Cấu hình — Robot AI Host</title>
-<style>
- body{{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;background:#f5f7fa;color:#1a1a2e}}
- h1{{font-size:24px}} label{{display:block;margin:12px 0 4px;font-weight:600;font-size:14px}}
- input,select{{width:100%;padding:10px;border:1px solid #d0d5dd;border-radius:8px;font-size:14px}}
- button{{margin-top:16px;padding:12px 24px;background:#315ee7;color:#fff;border:0;border-radius:8px;cursor:pointer;font-size:14px}}
- button:hover{{background:#2449b4}} .card{{background:#fff;border-radius:12px;padding:20px;margin:16px 0;box-shadow:0 2px 8px rgba(0,0,0,.06)}}
- .result{{margin-top:8px;padding:10px;border-radius:8px;font-size:13px}} .ok{{background:#daf5e4;color:#17633a}} .fail{{background:#f9dddd;color:#9b2929}}
-</style></head>
-<body>
-<h1>⚙️ Cấu hình Robot AI Host</h1>
-<div class="card">
- <h2>LLM endpoint</h2>
- <label>Base URL <input id="baseUrl" value="{settings.resolved_llm_base_url or ''}"></label>
- <label>Model <input id="model" value="{settings.resolved_llm_model}"></label>
- <label>API Key <input id="apiKey" type="password" value="{masked_key}" placeholder="Nhập API key..."></label>
- <label>Temperature <input id="temperature" type="number" step="0.1" min="0" max="2" value="{settings.llm_temperature}"></label>
- <label>Max tokens <input id="maxTokens" type="number" value="{settings.llm_max_tokens}"></label>
- <label>Timeout (giây) <input id="timeout" type="number" value="{settings.llm_timeout_seconds}"></label>
- <label>Streaming <select id="stream"><option value="true" {'selected' if settings.llm_stream else ''}>Bật</option><option value="false" {'' if settings.llm_stream else 'selected'}>Tắt</option></select></label>
- <button onclick="testConnection()">🔍 Kiểm tra kết nối</button>
- <div id="testResult" class="result"></div>
-</div>
-<div class="card">
- <h2>Trợ lý</h2>
- <label>Tên trợ lý <input id="assistantName" value="{settings.persona_name}"></label>
- <label>Số câu tối đa <input id="maxSentences" type="number" value="{settings.response_max_sentences}"></label>
- <label>Số từ tối đa <input id="maxWords" type="number" value="{settings.response_max_words}"></label>
- <button onclick="saveSettings()">💾 Lưu cấu hình</button>
-</div>
-<script>
-async function testConnection() {{
- const r = document.getElementById('testResult');
- r.textContent = 'Đang kiểm tra...'; r.className = 'result';
- try {{
-  const resp = await fetch('/api/system/devices');
-  const data = await resp.json();
-  r.textContent = '✅ Kết nối OK — model: ' + data.llm_model + ', STT: ' + data.stt_backend + ', GPU: ' + data.pytorch_device;
-  r.className = 'result ok';
- }} catch(e) {{
-  r.textContent = '❌ Lỗi: ' + e.message;
-  r.className = 'result fail';
- }}
-}}
-async function saveSettings() {{
- const r = document.getElementById('testResult');
- r.textContent = 'Đang lưu...'; r.className = 'result';
- try {{
-  const model = document.getElementById('model').value.trim();
-  const baseUrl = document.getElementById('baseUrl').value.trim();
-  const apiKey = document.getElementById('apiKey').value;
-  const resp = await fetch('/api/settings', {{
-   method: 'POST',
-   headers: {{'Content-Type': 'application/json'}},
-   body: JSON.stringify({{
-    llm_model: model || null,
-    llm_base_url: baseUrl || null,
-    llm_api_key: apiKey !== '{masked_key}' ? apiKey : null,
-    llm_temperature: parseFloat(document.getElementById('temperature').value) || null,
-    llm_max_tokens: parseInt(document.getElementById('maxTokens').value) || null,
-   }})
-  }});
-  const data = await resp.json();
-  if (data.status === 'saved') {{
-   r.textContent = '✅ Đã lưu! Cần restart host để áp dụng model mới: ' + (model || '(giữnguyên)');
-   r.className = 'result ok';
-  }} else {{
-   r.textContent = '❌ ' + (data.detail || 'Lỗi không xác định');
-   r.className = 'result fail';
-  }}
- }} catch(e) {{
-  r.textContent = '❌ Lỗi: ' + e.message;
-  r.className = 'result fail';
- }}
-}}
-</script>
-</body></html>"""
-        return HTMLResponse(html)
+        audit_log.log(
+            "connection_ticket_issued",
+            principal=device["device_id"],
+            target=f"session:{session_id}",
+            source_ip=request.client.host if request.client else "-",
+            extra={"transport": transport, "ticket_prefix": ticket.ticket[:8] + "..."},
+        )
+        return {
+            "ticket": ticket.ticket,
+            "expires_in": ticket.ttl_seconds,
+            "transport": transport,
+        }
+
+    # ── Legacy endpoints removed (PR-1) ───────────────────────────────
+    # POST /api/settings — REMOVED (no auth, now admin-only via /v1/admin)
+    # GET /settings — REMOVED (HTML page leaked masked API key)
+
+    # Dashboard (always served, no build required) ────────────────────
+    _dashboard_html: str | None = None
+
+    def _load_dashboard() -> str:
+        nonlocal _dashboard_html
+        if _dashboard_html is None:
+            path = BROWSER_SRC_DIR / "dashboard.html"
+            if path.is_file():
+                _dashboard_html = path.read_text(encoding="utf-8")
+            else:
+                _dashboard_html = "<h1>Dashboard not found</h1>"
+        return _dashboard_html
+
+    @app.get("/client", response_class=HTMLResponse)
+    async def dashboard(request: Request) -> HTMLResponse:
+        return HTMLResponse(_load_dashboard())
 
     if not BROWSER_DIST_DIR.is_dir():
-        @app.get("/client", response_class=HTMLResponse)
+        @app.get("/client/chat", response_class=HTMLResponse)
         async def browser_not_built() -> HTMLResponse:
             return HTMLResponse(
                 "<h1>Browser client is not built</h1>"

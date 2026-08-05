@@ -10,8 +10,8 @@ build/
 venv/
 
 # Frontend
-clients/browser/node_modules/
-clients/browser/dist/
+clients/*/node_modules/
+clients/*/dist/
 
 # Environment/secrets
 .env
@@ -38,3 +38,6 @@ models/
 .pytest_cache/
 .coverage
 htmlcov/
+assets/intro/
+.server.lock
+

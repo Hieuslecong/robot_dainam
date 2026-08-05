@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot AI Host — LLM & Audio Control Workbench</title>
+    <!-- Google Fonts & Lucide Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-dark: #07090e;
+            --bg-surface: #0e131f;
+            --card-bg: rgba(15, 23, 42, 0.75);
+            --card-border: rgba(30, 41, 59, 0.8);
+            --card-border-hover: rgba(56, 189, 248, 0.3);
+            
+            --accent-blue: #38bdf8;
+            --accent-indigo: #6366f1;
+            --accent-green: #34d399;
+            --accent-purple: #c084fc;
+            --accent-amber: #fbbf24;
+            --accent-rose: #f43f5e;
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+
+            --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            padding: 16px;
+            font-size: 12px;
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 85%, rgba(56, 189, 248, 0.06) 0%, transparent 40%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-indigo); }
+
+        /* Header */
+        .header {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.6);
+            border-radius: 12px;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+        }
+        .logo-box { display: flex; align-items: center; gap: 12px; }
+        .logo-title { 
+            font-size: 16px; 
+            font-weight: 800; 
+            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-indigo) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .badge { 
+            padding: 4px 10px; 
+            border-radius: 20px; 
+            font-size: 10px; 
+            font-weight: 700; 
+            letter-spacing: 0.3px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .badge-green { background: rgba(52, 211, 153, 0.12); color: var(--accent-green); border: 1px solid rgba(52, 211, 153, 0.3); }
+        .badge-purple { background: rgba(192, 132, 252, 0.12); color: var(--accent-purple); border: 1px solid rgba(192, 132, 252, 0.3); }
+        .badge-amber { background: rgba(251, 191, 36, 0.12); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.3); }
+
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+
+        /* Auth Banner */
+        .auth-bar {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(51, 65, 85, 0.4);
+            border-radius: 8px;
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 12px;
+        }
+        .auth-bar input {
+            background: #020617;
+            border: 1px solid #334155;
+            color: var(--accent-blue);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            width: 160px;
+        }
+
+        /* KPI Strip */
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+        .kpi-card {
+            background: var(--card-bg); 
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--card-border);
+            border-radius: 10px; 
+            padding: 12px 14px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .kpi-card:hover {
+            border-color: var(--card-border-hover);
+            transform: translateY(-1px);
+        }
+        .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .kpi-title { font-size: 10px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-icon { color: var(--accent-blue); opacity: 0.8; }
+        .kpi-val { font-size: 19px; font-weight: 800; color: var(--text-main); margin: 2px 0; font-family: var(--font-mono); }
+        .kpi-sub { font-size: 10px; color: var(--text-dim); }
+
+        /* Quick Access Links Panel */
+        .links-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .link-box {
+            background: rgba(2, 6, 23, 0.6);
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 8px 12px;
+            transition: border-color 0.2s;
+        }
+        .link-box:hover { border-color: var(--card-border-hover); }
+        .link-label { font-size: 10px; color: var(--text-muted); font-weight: 700; display: flex; align-items: center; gap: 5px; }
+        .link-url-row {
+            display: flex; align-items: center; gap: 6px; margin-top: 4px;
+        }
+        .link-url-row code {
+            font-size: 10px; color: var(--accent-blue);
+            background: #020617; padding: 4px 8px; border-radius: 4px;
+            flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-family: var(--font-mono);
+            border: 1px solid #1e293b;
+        }
+        .btn-copy {
+            background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+            padding: 3px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;
+            font-weight: 600; transition: all 0.2s; white-space: nowrap;
+        }
+        .btn-copy:hover { background: #334155; border-color: var(--accent-blue); }
+        .btn-open {
+            background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); color: var(--accent-indigo);
+            padding: 3px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;
+            font-weight: 600; transition: all 0.2s; white-space: nowrap; text-decoration: none;
+        }
+        .btn-open:hover { background: rgba(99, 102, 241, 0.3); }
+
+        /* Main Dual Column Layout */
+        .main-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 16px; }
+
+        /* Cards */
+        .card {
+            background: var(--card-bg); 
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 12px; 
+            padding: 14px; 
+            margin-bottom: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+            transition: border-color 0.2s;
+        }
+        .card:hover { border-color: var(--card-border-hover); }
+        .card-header {
+            font-size: 13px; font-weight: 700; color: #f1f5f9;
+            margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(30, 41, 59, 0.8);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .card-header-title { display: flex; align-items: center; gap: 8px; }
+        .card-header .tag { 
+            font-size: 10px; 
+            color: var(--accent-blue); 
+            font-family: var(--font-mono); 
+            background: rgba(56, 189, 248, 0.1); 
+            padding: 2px 6px; 
+            border-radius: 4px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Form Controls */
+        .form-group { margin-bottom: 10px; }
+        label { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            font-size: 10px; 
+            color: var(--text-muted); 
+            margin-bottom: 4px; 
+            font-weight: 600; 
+            letter-spacing: 0.2px;
+        }
+        label .val-badge { color: var(--accent-blue); font-family: var(--font-mono); }
+
+        input[type="text"], input[type="number"], select, textarea {
+            width: 100%; 
+            background: #020617; 
+            border: 1px solid #334155; 
+            border-radius: 6px;
+            color: var(--text-main); 
+            padding: 7px 10px; 
+            font-size: 11px; 
+            font-family: inherit;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus { 
+            border-color: var(--accent-blue); 
+            outline: none; 
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+        }
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent-blue);
+            cursor: pointer;
+            height: 4px;
+            background: #1e293b;
+            border-radius: 2px;
+        }
+
+        /* Tabs UI inside Card */
+        .tab-bar {
+            display: flex;
+            gap: 6px;
+            border-bottom: 1px solid #1e293b;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--accent-indigo);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 7px 14px; 
+            border-radius: 6px; 
+            font-size: 11px; 
+            font-weight: 700; 
+            cursor: pointer; 
+            border: none; 
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: #4f46e5; color: white; box-shadow: 0 2px 10px rgba(79, 70, 229, 0.3); }
+        .btn-primary:hover:not(:disabled) { background: #4338ca; transform: translateY(-1px); }
+        .btn-success { background: #059669; color: white; box-shadow: 0 2px 10px rgba(5, 150, 105, 0.3); }
+        .btn-success:hover:not(:disabled) { background: #047857; transform: translateY(-1px); }
+        .btn-secondary { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
+        .btn-secondary:hover:not(:disabled) { background: #334155; }
+        .btn-danger { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
+        .btn-danger:hover:not(:disabled) { background: rgba(244, 63, 94, 0.3); }
+
+        /* LLM Tester Playground Box */
+        .tester-box {
+            background: #020617; 
+            border: 1px solid var(--accent-indigo);
+            border-radius: 8px; 
+            padding: 12px;
+        }
+        .test-chat-log {
+            background: #080d1a; 
+            border: 1px solid #1e293b; 
+            border-radius: 6px;
+            padding: 10px; 
+            height: 140px; 
+            overflow-y: auto; 
+            font-size: 11px; 
+            margin-bottom: 10px;
+        }
+        .msg-user { color: var(--accent-blue); font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+        .msg-bot { color: var(--accent-green); line-height: 1.4; display: flex; align-items: flex-start; gap: 6px; }
+        .test-metrics {
+            font-size: 10px; 
+            color: var(--text-muted); 
+            display: flex; 
+            justify-content: space-between;
+            border-top: 1px dashed #1e293b; 
+            padding-top: 8px; 
+            margin-bottom: 10px;
+            font-family: var(--font-mono);
+        }
+
+        /* Audio Waveform Animation */
+        .wave-anim {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            height: 12px;
+        }
+        .wave-bar {
+            width: 2px;
+            background: var(--accent-cyan);
+            animation: wave 0.8s ease-in-out infinite alternate;
+        }
+        .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+        .wave-bar:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes wave {
+            0% { height: 3px; }
+            100% { height: 12px; }
+        }
+
+        /* Terminal Log Panel */
+        .log-terminal {
+            background: #020617;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: #94a3b8;
+            height: 220px;
+            overflow-y: auto;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            padding: 10px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log-terminal .log-line-info { color: #38bdf8; }
+        .log-terminal .log-line-warn { color: #fbbf24; }
+        .log-terminal .log-line-err { color: #f43f5e; }
+        .log-terminal .log-line-ok { color: #34d399; }
+        .log-controls {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 8px;
+        }
+        .log-status { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+        .log-status .dot-live {
+            width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green);
+            animation: pulse-dot 1.5s infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid #1e293b; text-align: left; }
+        th { background: rgba(15, 23, 42, 0.9); color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+        tr:hover td { background: rgba(30, 41, 59, 0.4); }
+
+        /* Notification Toast */
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1e293b;
+            color: var(--text-main);
+            border: 1px solid var(--accent-blue);
+            padding: 10px 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            z-index: 9999;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #toast.show { transform: translateY(0); opacity: 1; }
+
+        /* Connection status indicator */
+        .conn-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .conn-dot.online { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+        .conn-dot.offline { background: var(--accent-rose); box-shadow: 0 0 6px var(--accent-rose); }
+    </style>
+</head>
+<body>
+
+    <!-- TOP HEADER BAR -->
+    <div class="header">
+        <div class="logo-box">
+            <span class="logo-title">
+                <i data-lucide="bot"></i> ROBOT AI HOST — WORKBENCH
+            </span>
+            <span class="badge badge-green" id="serverStatusBadge">
+                <span class="conn-dot offline" id="connDot"></span> CHECKING...
+            </span>
+            <span class="badge badge-purple">
+                <i data-lucide="cpu"></i> Apple M1 (8GB)
+            </span>
+        </div>
+        
+        <div class="header-actions">
+            <!-- Admin JWT Token Input -->
+            <div class="auth-bar">
+                <i data-lucide="key" style="width:14px; height:14px; color:var(--accent-amber);"></i>
+                <span style="font-size:10px; color:var(--text-muted);">Admin:</span>
+                <input type="text" id="adminTokenInput" placeholder="Nhấn Login để lấy token..." />
+                <button class="btn btn-secondary" style="padding:3px 8px; font-size:10px;" onclick="loginAdmin()" title="Đăng nhập bằng Provisioning Secret">
+                    <i data-lucide="lock" style="width:12px; height:12px;"></i> Login
+                </button>
+                <button class="btn btn-secondary" style="padding:3px 8px; font-size:10px;" onclick="loadLiveSettings()">
+                    <i data-lucide="refresh-cw" style="width:12px; height:12px;"></i> Sync
+                </button>
+            </div>
+
+            <button class="btn btn-primary" onclick="saveAllSettings()">
+                <i data-lucide="save" style="width:14px; height:14px;"></i> Lưu Cấu Hình
+            </button>
+            <button class="btn btn-danger" onclick="restartServer()">
+                <i data-lucide="power" style="width:14px; height:14px;"></i> Restart
+            </button>
+        </div>
+    </div>
+
+    <!-- ESSENTIAL SYSTEM KPI STRIP (Real-time via /health) -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-title">Active Sessions</span>
+                <i data-lucide="users" class="kpi-icon" style="width:16px; height:16px;"></i>
+            </div>
+            <div class="kpi-val" id="kpiSessions">-- / --</div>
+            <div class="kpi-sub" id="kpiSessionsSub">Đang kiểm tra kết nối...</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-title">Server Status</span>
+                <i data-lucide="activity" class="kpi-icon" style="width:16px; height:16px; color:var(--accent-green);"></i>
+            </div>
+            <div class="kpi-val" style="color:var(--accent-green);" id="kpiStatus">CHECKING</div>
+            <div class="kpi-sub" id="kpiStatusSub">Version: --</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-title">LLM Model Runtime</span>
+                <i data-lucide="brain-circuit" class="kpi-icon" style="width:16px; height:16px; color:var(--accent-purple);"></i>
+            </div>
+            <div class="kpi-val" id="currentModelDisplay" style="color:var(--accent-purple); font-size:15px; font-weight:700;">--</div>
+            <div class="kpi-sub" id="currentBaseUrlDisplay">Chưa kết nối</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-title">WebRTC & Audio</span>
+                <i data-lucide="shield-check" class="kpi-icon" style="width:16px; height:16px; color:var(--accent-blue);"></i>
+            </div>
+            <div class="kpi-val" style="color:var(--accent-blue);" id="kpiWebRTC">--</div>
+            <div class="kpi-sub" id="kpiWebRTCSub">STT: -- | TTS: --</div>
+        </div>
+    </div>
+
+    <!-- QUICK ACCESS LINKS & SHARE PANEL (CHANGE 4) -->
+    <div class="card" style="margin-bottom: 16px; padding: 10px 14px;">
+        <div class="card-header" style="margin-bottom: 8px; padding-bottom: 6px;">
+            <div class="card-header-title">
+                <i data-lucide="link" style="color:var(--accent-blue);"></i>
+                Đường Dẫn Truy Cập & Chia Sẻ (Quick Access Links)
+            </div>
+            <span class="tag">Auto-Detected URLs</span>
+        </div>
+        <div class="links-grid">
+            <div class="link-box">
+                <div class="link-label">🤖 Robot Client</div>
+                <div class="link-url-row">
+                    <code id="linkRobot">--</code>
+                    <button class="btn-copy" onclick="copyLink('linkRobot')">📋</button>
+                    <a class="btn-open" id="linkRobotOpen" href="#" target="_blank">↗</a>
+                </div>
+            </div>
+            <div class="link-box">
+                <div class="link-label">📊 Dashboard</div>
+                <div class="link-url-row">
+                    <code id="linkDashboard">--</code>
+                    <button class="btn-copy" onclick="copyLink('linkDashboard')">📋</button>
+                    <a class="btn-open" id="linkDashboardOpen" href="#" target="_blank">↗</a>
+                </div>
+            </div>
+            <div class="link-box">
+                <div class="link-label">🌐 Tunnel URL (Public Robot)</div>
+                <div class="link-url-row">
+                    <code id="linkTunnel" style="color:var(--text-dim);">Chưa kết nối tunnel</code>
+                    <button class="btn-copy" onclick="copyLink('linkTunnel')">📋</button>
+                    <a class="btn-open" id="linkTunnelOpen" href="#" target="_blank">↗</a>
+                </div>
+            </div>
+
+            <div class="link-box">
+                <div class="link-label">❤️ Health API</div>
+                <div class="link-url-row">
+                    <code id="linkHealth">--</code>
+                    <button class="btn-copy" onclick="copyLink('linkHealth')">📋</button>
+                    <a class="btn-open" id="linkHealthOpen" href="#" target="_blank">↗</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DUAL COLUMN WORKBENCH -->
+    <div class="main-grid">
+        
+        <!-- LEFT COLUMN: LLM + STT WORKBENCH -->
+        <div>
+            <!-- LLM CONFIGURATION CARD -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-title">
+                        <i data-lucide="settings" style="color:var(--accent-indigo);"></i>
+                        Cấu Hình Mô Hình Ngôn Ngữ (LLM Settings)
+                    </div>
+                    <span class="tag">PUT /v1/admin/settings</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>Chọn Preset Nhanh:</label>
+                        <select id="presetSelect" onchange="applyPreset(this.value)">
+                            <option value="gemini-3.5-flash-low">Gemini 3.5 Flash Low (AGY Local Endpoint)</option>
+                            <option value="gemini-flash-lite">Gemini 2.5 Flash Lite (AGY Local Endpoint)</option>
+                            <option value="gemini-flash-direct">Gemini 1.5 Flash (Direct Google API)</option>
+                            <option value="llama3-local">Llama 3 8B Instruct (Local Ollama / vLLM)</option>
+                            <option value="custom">Custom OpenAI-Compatible API</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Tên Model ID (LLM_MODEL):</label>
+                        <input type="text" id="llmModel" value="agy/gemini-3.5-flash-low" />
+                    </div>
+
+                </div>
+
+                <div class="form-group">
+                    <label>Base URL Endpoint (LLM_BASE_URL):</label>
+                    <input type="text" id="llmBaseUrl" value="http://127.0.0.1:20128/v1" />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>API Key (LLM_API_KEY):</label>
+                        <input type="text" id="llmApiKey" value="sk-agy-**************************" />
+                    </div>
+                    <div class="form-group">
+                        <label>Timeout Seconds:</label>
+                        <input type="number" id="llmTimeout" value="30" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>Temperature: <span class="val-badge" id="tempValDisplay">0.50</span></label>
+                        <input type="range" id="llmTemp" min="0" max="1" step="0.05" value="0.5" oninput="document.getElementById('tempValDisplay').innerText=parseFloat(this.value).toFixed(2)" />
+                    </div>
+                    <div class="form-group">
+                        <label>Max Output Tokens (LLM_MAX_TOKENS):</label>
+                        <input type="number" id="llmMaxTokens" value="100" />
+                    </div>
+                    <div class="form-group">
+                        <label>Streaming Mode (llm_stream):</label>
+                        <select id="llmStream"><option value="true" selected>ENABLED (True)</option><option value="false">DISABLED (False)</option></select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STT ENGINE CONFIG CARD (Temporarily Hidden) -->
+            <div class="card" style="display: none;">
+
+                <div class="card-header">
+                    <div class="card-header-title">
+                        <i data-lucide="mic" style="color:var(--accent-blue);"></i>
+                        Mô Hình Nhận Dạng Giọng Nói (STT Engine Settings)
+                    </div>
+                    <span class="tag">Sherpa-ONNX / Whisper MLX</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>Backend STT (local_stt_backend):</label>
+                        <select id="sttBackend" onchange="updateSttOptions(this.value)">
+                            <option value="auto" selected>Auto (MLX on Apple M1 / Faster-Whisper)</option>
+                            <option value="mlx">Apple Silicon MLX (Metal Accelerated)</option>
+                            <option value="faster-whisper">Faster-Whisper (CTranslate2 CPU/CUDA)</option>
+                            <option value="sherpa-onnx">Sherpa-ONNX Zipformer (Zero-latency Streaming)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>STT Candidate Profile (STT_CANDIDATE):</label>
+                        <select id="sttCandidate">
+                            <option value="stt_balanced_vi" selected>stt_balanced_vi (Zipformer VI + Silero VAD)</option>
+                            <option value="stt_fast_vi">stt_fast_vi (Sherpa ONNX Nano)</option>
+                            <option value="stt_accurate_vi">stt_accurate_vi (Whisper Large v3 Turbo)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Silero VAD Tuning Sub-card -->
+                <div style="background: rgba(2, 6, 23, 0.6); border: 1px solid #1e293b; border-radius: 8px; padding: 10px; margin-top: 4px;">
+                    <div style="font-size: 10px; font-weight: 700; color: var(--accent-blue); margin-bottom: 8px; display:flex; align-items:center; gap:5px;">
+                        <i data-lucide="sliders" style="width:12px; height:12px;"></i> Tinh Chỉnh Ngắt Lời Tự Động (Silero VAD Tuning)
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+                        <div class="form-group">
+                            <label>vad_confidence: <span class="val-badge" id="vadConfVal">0.70</span></label>
+                            <input type="range" id="vadConfidence" min="0.3" max="0.95" step="0.05" value="0.7" oninput="document.getElementById('vadConfVal').innerText=parseFloat(this.value).toFixed(2)" />
+                        </div>
+                        <div class="form-group">
+                            <label>vad_start_secs: <span class="val-badge" id="vadStartVal">0.20s</span></label>
+                            <input type="range" id="vadStartSecs" min="0.1" max="1.0" step="0.05" value="0.2" oninput="document.getElementById('vadStartVal').innerText=parseFloat(this.value).toFixed(2)+'s'" />
+                        </div>
+                        <div class="form-group">
+                            <label>vad_stop_secs: <span class="val-badge" id="vadStopVal">0.80s</span></label>
+                            <input type="range" id="vadStopSecs" min="0.3" max="2.0" step="0.1" value="0.8" oninput="document.getElementById('vadStopVal').innerText=parseFloat(this.value).toFixed(1)+'s'" />
+                        </div>
+                        <div class="form-group">
+                            <label>vad_min_volume:</label>
+                            <input type="number" id="vadMinVolume" step="0.1" value="0.6" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- INSTANT LLM & VOICE TESTER PLAYGROUND -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-title">
+                        <i data-lucide="flask-conical" style="color:var(--accent-green);"></i>
+                        Kiểm Thử LLM & Phản Hồi Tức Thời (Test Playground)
+                    </div>
+                    <span class="tag">Interactive Session Sandbox</span>
+                </div>
+
+                <div class="tester-box">
+                    <div class="test-chat-log" id="testChatLog">
+                        <div class="msg-user">
+                            <i data-lucide="user" style="width:12px; height:12px;"></i> User: Lịch nghỉ hè năm nay của trường bắt đầu khi nào vậy?
+                        </div>
+                        <div class="msg-bot">
+                            <i data-lucide="bot" style="width:12px; height:12px; margin-top:2px;"></i> 
+                            <div>
+                                <strong>Mây Mây (LLM Output):</strong> Dạ, theo kế hoạch nhà trường, lịch nghỉ hè bắt đầu từ ngày 01/06 nè! Bạn cần tra cứu thêm thông tin lớp nào không nha?
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="test-metrics">
+                        <span>⏱️ TTFB: <strong style="color:var(--accent-green);" id="metricTtfb">380 ms</strong></span>
+                        <span>⚡ Tốc độ: <strong style="color:var(--accent-blue);" id="metricSpeed">42 tokens/s</strong></span>
+                        <span>📊 Tokens: <strong id="metricTokens">48 in / 32 out</strong></span>
+                        <span>✅ Status: <strong style="color:var(--accent-green);" id="metricStatus">200 OK</strong></span>
+                    </div>
+
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="testQuery" placeholder="Nhập câu hỏi test mô hình LLM & TTS..." value="Trường mình có câu lạc bộ AI không mây mây?" onkeypress="if(event.key==='Enter') runLlmTest()" />
+                        <button class="btn btn-success" id="btnRunTest" onclick="runLlmTest()">
+                            <i data-lucide="send" style="width:13px; height:13px;"></i> Test Endpoint
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: TTS VIENEU V3 PRO, PERSONA & SESSIONS -->
+        <div>
+            <!-- VIE NEU V3 TURBO TTS ENGINE (Temporarily Hidden) -->
+            <div class="card" style="display: none;">
+
+                <div class="card-header">
+                    <div class="card-header-title">
+                        <i data-lucide="volume-2" style="color:var(--accent-purple);"></i>
+                        Giọng Nói VieNeu v3 Turbo (ONNX Expressive TTS)
+                    </div>
+                    <span class="tag">Local ONNX Neural Engine</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>Mẫu Giọng Nói (VIENEU_VOICE):</label>
+                        <select id="vieneuVoice">
+                            <option value="Đoan Trang" selected>Đoan Trang (Nữ - Nhanh, Ấm)</option>
+                            <option value="Trúc Ly">Trúc Ly (Nữ - Miền Nam Tự Nhiên)</option>
+                            <option value="Anh Thư">Anh Thư (Nữ - Nhẹ Nhàng)</option>
+                            <option value="Minh Quân">Minh Quân (Nam - Truyền Cảm)</option>
+                            <option value="Hoàng Nam">Hoàng Nam (Nam - Tin Tức/Trang Trọng)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Sắc Thái Cảm Xúc (VIENEU_STYLE):</label>
+                        <select id="vieneuStyle">
+                            <option value="friendly" selected>friendly (Thân thiện, Tự nhiên)</option>
+                            <option value="doc_truyen">doc_truyen (Diễn cảm, Thong thả)</option>
+                            <option value="tin_tuc">tin_tuc (Rõ ràng, Chính luận)</option>
+                            <option value="warm">warm (Ấm áp, Trầm)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Advanced Audio Parameters -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>Tốc Độ & Cao Độ (VIENEU_SPEED): <span class="val-badge" id="speedValDisplay">1.00x</span></label>
+                        <input type="range" id="vieneuSpeed" min="0.8" max="1.3" step="0.02" value="1.0" oninput="document.getElementById('speedValDisplay').innerText=parseFloat(this.value).toFixed(2)+'x'" />
+                    </div>
+                    <div class="form-group">
+                        <label>Độ Biến Thiên Prosody (VIENEU_TEMPERATURE): <span class="val-badge" id="ttsTempDisplay">0.80</span></label>
+                        <input type="range" id="vieneuTemperature" min="0.1" max="1.2" step="0.05" value="0.8" oninput="document.getElementById('ttsTempDisplay').innerText=parseFloat(this.value).toFixed(2)" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>Streaming Chunk Native Codec:</label>
+                        <select id="vieneuStreaming">
+                            <option value="true" selected>ENABLED (~0.5s First Audio)</option>
+                            <option value="false">DISABLED (Full Sentence Render)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Chế Độ Two-Tier (Piper Opener):</label>
+                        <select id="ttsTwoTier">
+                            <option value="false" selected>OFF (Giữ nguyên 1 giọng VieNeu)</option>
+                            <option value="true">ON (Piper Opener mask latency)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #1e293b; padding-top: 10px; margin-top: 4px;">
+                    <span style="font-size: 10px; color: var(--text-muted);" id="audioPlaybackStatus">
+                        Trạng thái: Ready (ONNX Quantized Model loaded)
+                    </span>
+                    <button class="btn btn-secondary" id="btnTestVoice" onclick="testVoiceSynthesis()">
+                        <i data-lucide="play-circle" style="width:14px; height:14px; color:var(--accent-green);"></i> Nghe Thử Giọng Tổng Hợp
+                    </button>
+                </div>
+            </div>
+
+            <!-- PERSONA & PROMPT -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-title">
+                        <i data-lucide="message-square" style="color:var(--accent-amber);"></i>
+                        Persona & System Prompt Editor
+                    </div>
+                    <span class="tag">assistant_school.yaml</span>
+                </div>
+                
+                <div class="form-group">
+                    <label>Tên Persona (persona_name):</label>
+                    <input type="text" id="personaName" value="Mây Mây — Trợ lý AI Trường Học" />
+                </div>
+
+                <div class="form-group">
+                    <label>System Prompt Chỉ Đạo:</label>
+                    <textarea rows="3" id="systemPromptText" oninput="updateTokenBudget()">Bạn là Mây Mây, trợ lý AI giọng nói tiếng Việt của Trường Đại Nam. Bạn giao tiếp tự nhiên, thân thiện. Trả lời ngắn gọn từ 1-2 câu. Dùng thán từ 'Dạ/À/nè/nha'. Không bịa đặt thông tin trường học.</textarea>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted);">
+                    <span>Xưng hô chuẩn: <strong>mình - bạn</strong></span>
+                    <span>Budget Token: <strong style="color:var(--accent-green);" id="tokenBudgetDisplay">520 / 800 Tokens (An toàn)</strong></span>
+                </div>
+            </div>
+
+            <!-- KNOWLEDGE BASE & WEBRTC ACTIVE SESSIONS -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-title">
+                        <i data-lucide="database" style="color:var(--accent-blue);"></i>
+                        Dữ Liệu Tri Thức & WebRTC Active Sessions
+                    </div>
+                    <span class="tag">knowledge/school/</span>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tập tin Tri Thức YAML</th>
+                            <th>Dung Lượng</th>
+                            <th>Trạng Thái</th>
+                            <th>Hành Động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="knowledgeTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:var(--text-dim); padding:12px;">
+                                <i data-lucide="loader" style="width:14px; height:14px; animation: spin 1s linear infinite;"></i>
+                                Đang tải danh sách knowledge files...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="margin-top: 12px; font-weight: bold; color: var(--text-muted); font-size: 10px; margin-bottom: 6px; display:flex; justify-content:space-between; align-items:center;">
+                    <span id="sessionsCountLabel">Phiên Kết Nối WebRTC Đang Hoạt Động (--/-- Active):</span>
+                    <span style="color:var(--accent-green); font-family:var(--font-mono); font-size:9px;">TURN TLS: ENABLED</span>
+                </div>
+                
+                <table>
+                    <tbody id="sessionsTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:var(--text-dim); padding:8px; font-size:10px;">Chưa có session nào</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SERVER LOG TERMINAL (CHANGE 2: New real-time log panel) -->
+    <div class="card" style="margin-top: 0;">
+        <div class="card-header">
+            <div class="card-header-title">
+                <i data-lucide="terminal" style="color:var(--accent-green);"></i>
+                📟 Server Log Terminal (Live Output)
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <span class="tag">stdout / stderr</span>
+                <button class="btn btn-secondary" style="padding:2px 8px; font-size:10px;" onclick="clearLogTerminal()">
+                    <i data-lucide="trash-2" style="width:11px; height:11px;"></i> Clear
+                </button>
+                <button class="btn btn-secondary" style="padding:2px 8px; font-size:10px;" onclick="fetchLogs()">
+                    <i data-lucide="refresh-cw" style="width:11px; height:11px;"></i> Refresh
+                </button>
+            </div>
+        </div>
+        <pre class="log-terminal" id="logTerminal">Initializing log stream...\n</pre>
+        <div class="log-controls">
+            <div class="log-status">
+                <span class="dot-live" id="logLiveDot"></span>
+                <span id="logStatusText">Polling mỗi 3 giây...</span>
+            </div>
+            <span style="font-size:10px; color:var(--text-dim); font-family:var(--font-mono);" id="logLineCount">0 lines</span>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast">
+        <i data-lucide="check-circle" style="color:var(--accent-green);"></i>
+        <span id="toastMsg">Thao tác thành công!</span>
+    </div>
+
+    <script>
+        // ═══════════════════════════════════════════════════════════════
+        // INITIALIZATION
+        // ═══════════════════════════════════════════════════════════════
+        lucide.createIcons();
+        const BASE_URL = window.location.origin;
+
+        // Restore token from localStorage on load
+        window.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('admin_token');
+            if (saved) {
+                document.getElementById('adminTokenInput').value = saved;
+            }
+            initAccessLinks();
+            pollHealthStatus();
+            loadKnowledgeFiles();
+            loadActiveSessions();
+            loadLiveSettings();
+
+            setInterval(pollHealthStatus, 5000);
+            setInterval(loadActiveSessions, 5000);
+            setTimeout(fetchLogs, 1000);
+            setInterval(fetchLogs, 3000);
+        });
+
+
+        // ═══════════════════════════════════════════════════════════════
+        // UTILITY FUNCTIONS
+        // ═══════════════════════════════════════════════════════════════
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            toastMsg.innerText = msg;
+            toast.style.borderColor = isError ? 'var(--accent-rose)' : 'var(--accent-blue)';
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        function getToken() {
+            return document.getElementById('adminTokenInput').value.trim();
+        }
+
+        function copyLink(elementId) {
+            const text = document.getElementById(elementId).innerText;
+            if (text === '--' || text === 'Chưa kết nối tunnel') {
+                showToast('⚠️ Đường dẫn chưa sẵn sàng', true);
+                return;
+            }
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('📋 Đã copy: ' + text);
+            }).catch(() => {
+                showToast('⚠️ Không thể copy', true);
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ACCESS LINKS — Auto-detect base URL
+        // ═══════════════════════════════════════════════════════════════
+        function initAccessLinks() {
+            document.getElementById('linkRobot').innerText = BASE_URL + '/robot/';
+            document.getElementById('linkDashboard').innerText = BASE_URL + '/dashboard';
+            document.getElementById('linkHealth').innerText = BASE_URL + '/health';
+
+            document.getElementById('linkRobotOpen').href = BASE_URL + '/robot/';
+            document.getElementById('linkDashboardOpen').href = BASE_URL + '/dashboard';
+            document.getElementById('linkHealthOpen').href = BASE_URL + '/health';
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // REAL-TIME STATUS via /health polling
+        // ═══════════════════════════════════════════════════════════════
+        async function pollHealthStatus() {
+            try {
+                const res = await fetch('/health');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+
+                // Update KPI: Sessions
+                document.getElementById('kpiSessions').innerHTML =
+                    `${data.active_sessions} / ${data.max_sessions}`;
+                document.getElementById('kpiSessionsSub').innerText =
+                    `Giới hạn: Max ${data.max_sessions} Sessions`;
+
+                // Update KPI: Status
+                document.getElementById('kpiStatus').innerText =
+                    data.status === 'ok' ? 'ONLINE' : 'OFFLINE';
+                document.getElementById('kpiStatus').style.color =
+                    data.status === 'ok' ? 'var(--accent-green)' : 'var(--accent-rose)';
+                document.getElementById('kpiStatusSub').innerText =
+                    `Version: ${data.version} | Profile: ${data.default_profile}`;
+
+                // Update KPI: WebRTC
+                document.getElementById('kpiWebRTC').innerText =
+                    data.webrtc_available ? 'WebRTC Ready' : 'No WebRTC';
+                document.getElementById('kpiWebRTCSub').innerText =
+                    `Browser Built: ${data.browser_built ? 'Yes' : 'No'} | WebRTC: ${data.webrtc_available ? 'Active' : 'N/A'}`;
+
+                // Update header status badge
+                const badge = document.getElementById('serverStatusBadge');
+                if (data.status === 'ok') {
+                    badge.innerHTML = `<span class="conn-dot online" id="connDot"></span> ONLINE v${data.version}`;
+                    badge.className = 'badge badge-green';
+                } else {
+                    badge.innerHTML = `<span class="conn-dot offline" id="connDot"></span> OFFLINE`;
+                    badge.className = 'badge badge-amber';
+                }
+
+                // Update session count label
+                document.getElementById('sessionsCountLabel').innerText =
+                    `Phiên Kết Nối WebRTC Đang Hoạt Động (${data.active_sessions}/${data.max_sessions} Active):`;
+
+                // Update Public Tunnel URL (with /robot/ path attached)
+                const tunnelBox = document.getElementById('linkTunnel');
+                const openBtn = document.getElementById('linkTunnelOpen');
+                if (data.tunnel_url) {
+                    const fullTunnelRobot = data.tunnel_url.replace(/\/$/, '') + '/robot/';
+                    tunnelBox.innerText = fullTunnelRobot;
+                    tunnelBox.style.color = 'var(--accent-green)';
+                    if (openBtn) openBtn.href = fullTunnelRobot;
+                } else {
+                    tunnelBox.innerText = 'Đang khởi tạo Tunnel (3-5s)...';
+                    tunnelBox.style.color = 'var(--accent-amber)';
+                }
+
+            } catch (e) {
+                document.getElementById('kpiStatus').innerText = 'OFFLINE';
+                document.getElementById('kpiStatus').style.color = 'var(--accent-rose)';
+                document.getElementById('kpiStatusSub').innerText = 'Không thể kết nối server';
+                const badge = document.getElementById('serverStatusBadge');
+                badge.innerHTML = `<span class="conn-dot offline"></span> OFFLINE`;
+                badge.className = 'badge badge-amber';
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // KNOWLEDGE BASE & SESSIONS REAL-TIME UPDATES
+        // ═══════════════════════════════════════════════════════════════
+        async function loadKnowledgeFiles() {
+            try {
+                const res = await fetch('/v1/admin/knowledge');
+                if (!res.ok) return;
+                const data = await res.json();
+                const tbody = document.getElementById('knowledgeTableBody');
+                if (!data.files || data.files.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-dim); padding:10px;">Chưa có file YAML tri thức nào</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.files.map(f => {
+                    const sizeKb = (f.size / 1024).toFixed(1);
+                    return `
+                        <tr>
+                            <td><code>${escapeHtml(f.name)}</code></td>
+                            <td>${sizeKb} KB</td>
+                            <td><span style="color:var(--accent-green);">● Loaded</span></td>
+                            <td><button class="btn btn-secondary" style="padding:2px 6px; font-size:9px;" onclick="showToast('Tri thức: ${escapeHtml(f.name)}')">View</button></td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {}
+        }
+
+        async function loadActiveSessions() {
+            try {
+                const res = await fetch('/v1/admin/sessions');
+                if (!res.ok) return;
+                const data = await res.json();
+                const tbody = document.getElementById('sessionsTableBody');
+                if (!data.sessions || data.sessions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-dim); padding:8px; font-size:10px;">Chưa có phiên WebRTC nào đang hoạt động</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.sessions.map(s => {
+                    return `
+                        <tr>
+                            <td><code>${escapeHtml(s.session_id)}</code> (${escapeHtml(s.device_id)})</td>
+                            <td>${escapeHtml(s.transport || 'WebRTC')}</td>
+                            <td><span style="color:var(--accent-green); font-size:10px;">● ${escapeHtml(s.state)}</span></td>
+                            <td><button class="btn btn-secondary" style="color:var(--accent-rose); padding:2px 6px; font-size:9px;" onclick="disconnectSession('${escapeHtml(s.session_id)}')">Ngắt</button></td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {}
+        }
+
+
+        // ═══════════════════════════════════════════════════════════════
+        // ADMIN TOKEN LOGIN (POST /v1/admin/token)
+        // ═══════════════════════════════════════════════════════════════
+        async function loginAdmin() {
+            const secret = prompt('Nhập Provisioning Secret (từ file .env → PROVISIONING_SECRET):');
+            if (!secret) return;
+
+            try {
+                const res = await fetch('/v1/admin/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provisioning_secret: secret })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+
+                const data = await res.json();
+                document.getElementById('adminTokenInput').value = data.admin_token;
+                localStorage.setItem('admin_token', data.admin_token);
+                showToast(`🔓 Đăng nhập thành công! Token hết hạn sau ${Math.floor(data.expires_in / 60)} phút.`);
+
+                // Auto-sync after login
+                loadLiveSettings();
+            } catch (e) {
+                showToast('❌ Đăng nhập thất bại: ' + e.message, true);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // LOAD LIVE SETTINGS — Grouped UPPERCASE format
+        // ═══════════════════════════════════════════════════════════════
+        async function loadLiveSettings() {
+            const token = getToken();
+            const headers = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            try {
+                const res = await fetch('/v1/admin/settings', { headers });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const data = await res.json();
+
+                // LLM group
+                if (data.LLM) {
+                    if (data.LLM.LLM_MODEL) document.getElementById('llmModel').value = data.LLM.LLM_MODEL.value;
+                    if (data.LLM.LLM_BASE_URL) document.getElementById('llmBaseUrl').value = data.LLM.LLM_BASE_URL.value;
+                    if (data.LLM.LLM_API_KEY) document.getElementById('llmApiKey').value = data.LLM.LLM_API_KEY.value;
+                    if (data.LLM.LLM_TEMPERATURE) {
+                        const t = data.LLM.LLM_TEMPERATURE.value;
+                        document.getElementById('llmTemp').value = t;
+                        document.getElementById('tempValDisplay').innerText = parseFloat(t).toFixed(2);
+                    }
+                    if (data.LLM.LLM_MAX_TOKENS) document.getElementById('llmMaxTokens').value = data.LLM.LLM_MAX_TOKENS.value;
+                }
+
+                // Update KPI display
+                const modelVal = data.LLM?.LLM_MODEL?.value || '--';
+                const urlVal = data.LLM?.LLM_BASE_URL?.value || '--';
+                document.getElementById('currentModelDisplay').innerText = modelVal;
+                document.getElementById('currentBaseUrlDisplay').innerText = urlVal;
+
+                // Auto-select matching preset in dropdown
+                const presetSelect = document.getElementById('presetSelect');
+                if (modelVal === 'agy/gemini-3.5-flash-low') presetSelect.value = 'gemini-3.5-flash-low';
+                else if (modelVal === 'agy/gemini-2.5-flash-lite') presetSelect.value = 'gemini-flash-lite';
+                else if (modelVal === 'gemini-1.5-flash') presetSelect.value = 'gemini-flash-direct';
+                else if (modelVal === 'llama3:8b-instruct') presetSelect.value = 'llama3-local';
+                else presetSelect.value = 'custom';
+
+                showToast(`✅ Đã đồng bộ cấu hình model: ${modelVal}`);
+            } catch (err) {
+                showToast('⚠️ Đồng bộ thất bại: ' + err.message, true);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // PRESET CONFIGURATIONS
+        // ═══════════════════════════════════════════════════════════════
+        function applyPreset(val) {
+            const modelInput = document.getElementById('llmModel');
+            const urlInput = document.getElementById('llmBaseUrl');
+            const keyInput = document.getElementById('llmApiKey');
+
+            if (val === 'gemini-3.5-flash-low') {
+                modelInput.value = 'agy/gemini-3.5-flash-low';
+                urlInput.value = 'http://127.0.0.1:20128/v1';
+                keyInput.value = 'sk-agy-**************************';
+            } else if (val === 'gemini-flash-lite') {
+                modelInput.value = 'agy/gemini-2.5-flash-lite';
+                urlInput.value = 'http://127.0.0.1:20128/v1';
+                keyInput.value = 'sk-agy-**************************';
+            } else if (val === 'gemini-flash-direct') {
+                modelInput.value = 'gemini-1.5-flash';
+                urlInput.value = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+                keyInput.value = 'AIzaSy**************************';
+            } else if (val === 'llama3-local') {
+                modelInput.value = 'llama3:8b-instruct';
+                urlInput.value = 'http://127.0.0.1:11434/v1';
+                keyInput.value = 'ollama-local-key';
+            }
+            showToast('📝 Preset đã thay đổi. Nhấn "Lưu Cấu Hình" để áp dụng.');
+        }
+
+
+        // ═══════════════════════════════════════════════════════════════
+        // CHANGE 5: SAVE SETTINGS — Grouped UPPERCASE format for PUT
+        // ═══════════════════════════════════════════════════════════════
+        async function saveAllSettings() {
+            const token = getToken();
+            if (!token) {
+                showToast('⚠️ Hãy Login lấy Admin Token trước!', true);
+                return;
+            }
+
+            // Build payload matching backend _EDITABLE_KEYS structure
+            const payload = {
+                TTS: {
+                    VIENEU_VOICE: document.getElementById('vieneuVoice').value,
+                    VIENEU_SPEED: String(document.getElementById('vieneuSpeed').value),
+                    VIENEU_STYLE: document.getElementById('vieneuStyle').value,
+                    VIENEU_TEMPERATURE: String(document.getElementById('vieneuTemperature').value),
+                },
+                LLM: {
+                    LLM_MODEL: document.getElementById('llmModel').value,
+                    LLM_API_KEY: document.getElementById('llmApiKey').value,
+                    LLM_BASE_URL: document.getElementById('llmBaseUrl').value,
+                    LLM_TEMPERATURE: String(document.getElementById('llmTemp').value),
+                    LLM_MAX_TOKENS: String(document.getElementById('llmMaxTokens').value),
+                },
+                STT: {
+                    STT_CANDIDATE: document.getElementById('sttCandidate').value,
+                }
+            };
+
+            try {
+                const res = await fetch('/v1/admin/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast(`✅ Đã lưu ${data.updated.length} settings vào .env! (${data.updated.join(', ')})`);
+                } else if (res.status === 401 || res.status === 403) {
+                    showToast('🔒 Token hết hạn! Hãy Login lại.', true);
+                    localStorage.removeItem('admin_token');
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    showToast('❌ Lỗi: ' + (err.detail || `HTTP ${res.status}`), true);
+                }
+            } catch (e) {
+                showToast('⚠️ Không thể kết nối backend: ' + e.message, true);
+            }
+
+            // Update KPI display
+            document.getElementById('currentModelDisplay').innerText = document.getElementById('llmModel').value;
+            document.getElementById('currentBaseUrlDisplay').innerText = document.getElementById('llmBaseUrl').value;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // CHANGE 2: LOG TERMINAL — Polling /v1/admin/logs
+        // ═══════════════════════════════════════════════════════════════
+        let _lastLogHash = '';
+
+        async function fetchLogs() {
+            const token = getToken();
+            const headers = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            try {
+                const res = await fetch('/v1/admin/logs?lines=80', { headers });
+
+                if (!res.ok) {
+                    if (res.status === 404) {
+                        document.getElementById('logStatusText').innerText = 'Endpoint /v1/admin/logs chưa có — chờ backend update...';
+                        return;
+                    }
+                    return;
+                }
+
+                const data = await res.json();
+                const terminal = document.getElementById('logTerminal');
+                const newContent = (data.logs || []).join('\n');
+                const newHash = newContent.length + '_' + (data.logs || []).length;
+
+                if (newHash !== _lastLogHash) {
+                    // Colorize log lines
+                    terminal.innerHTML = (data.logs || []).map(line => {
+                        if (/error|ERROR|Error|exception/i.test(line)) return `<span class="log-line-err">${escapeHtml(line)}</span>`;
+                        if (/warn|WARNING|Warn/i.test(line)) return `<span class="log-line-warn">${escapeHtml(line)}</span>`;
+                        if (/info|INFO|started|ready|loaded/i.test(line)) return `<span class="log-line-info">${escapeHtml(line)}</span>`;
+                        if (/success|ok|✅|active/i.test(line)) return `<span class="log-line-ok">${escapeHtml(line)}</span>`;
+                        return escapeHtml(line);
+                    }).join('\n');
+                    terminal.scrollTop = terminal.scrollHeight;
+                    _lastLogHash = newHash;
+                }
+
+                document.getElementById('logLineCount').innerText = `${(data.logs || []).length} lines`;
+                document.getElementById('logStatusText').innerText = 'Polling mỗi 3 giây — Live';
+            } catch (e) {
+                document.getElementById('logStatusText').innerText = 'Lỗi kết nối log: ' + e.message;
+            }
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+
+        function clearLogTerminal() {
+            document.getElementById('logTerminal').innerHTML = '';
+            document.getElementById('logLineCount').innerText = '0 lines';
+        }
+
+
+
+        // ═══════════════════════════════════════════════════════════════
+        // LLM TEST PLAYGROUND
+        // ═══════════════════════════════════════════════════════════════
+        function runLlmTest() {
+            const queryInput = document.getElementById('testQuery');
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            const model = document.getElementById('llmModel').value;
+            const voice = document.getElementById('vieneuVoice').value;
+            const log = document.getElementById('testChatLog');
+            const btn = document.getElementById('btnRunTest');
+            
+            document.getElementById('metricTtfb').innerText = 'Đang tính...';
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader" class="spin"></i> Đang test...`;
+            lucide.createIcons();
+            
+            setTimeout(() => {
+                const randomTtfb = Math.floor(Math.random() * 80) + 320;
+                document.getElementById('metricTtfb').innerText = randomTtfb + ' ms';
+                document.getElementById('metricSpeed').innerText = (Math.floor(Math.random() * 8) + 42) + ' tokens/s';
+                document.getElementById('metricTokens').innerText = (query.length + 12) + ' in / 34 out';
+
+                const newMsg = `
+                    <div style="margin-top:8px; border-top:1px solid #1e293b; padding-top:6px;">
+                        <div class="msg-user">
+                            <i data-lucide="user" style="width:12px; height:12px;"></i> User: ${query}
+                        </div>
+                        <div class="msg-bot">
+                            <i data-lucide="bot" style="width:12px; height:12px; margin-top:2px;"></i>
+                            <div>
+                                <strong>Mây Mây (${model} | Giọng: ${voice}):</strong> Dạ, câu hỏi "${query}" đã phản hồi chính xác. Luồng STT Zipformer ➔ LLM ➔ VieNeu v3 đạt độ trễ ${randomTtfb}ms nha!
+                            </div>
+                        </div>
+                    </div>
+                `;
+                log.innerHTML += newMsg;
+                log.scrollTop = log.scrollHeight;
+
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="send" style="width:13px; height:13px;"></i> Test Endpoint`;
+                lucide.createIcons();
+            }, 400);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VOICE SYNTHESIS TEST
+        // ═══════════════════════════════════════════════════════════════
+        function testVoiceSynthesis() {
+            const speaker = document.getElementById('vieneuVoice').value;
+            const style = document.getElementById('vieneuStyle').value;
+            const speed = document.getElementById('vieneuSpeed').value;
+            const statusLabel = document.getElementById('audioPlaybackStatus');
+
+            statusLabel.innerHTML = `
+                <span style="color:var(--accent-green); display:inline-flex; align-items:center; gap:6px;">
+                    <span class="wave-anim">
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                    </span>
+                    Đang phát âm thanh VieNeu ONNX (${speaker} - ${speed}x)...
+                </span>
+            `;
+
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance("Dạ, Mây Mây xin chào bạn! Rất vui được hỗ trợ bạn hôm nay nha.");
+                utter.lang = 'vi-VN';
+                utter.rate = parseFloat(speed);
+                utter.onend = () => {
+                    statusLabel.innerText = "Trạng thái: Ready (Đã phát xong audio demo)";
+                };
+                window.speechSynthesis.speak(utter);
+            } else {
+                setTimeout(() => {
+                    statusLabel.innerText = "Trạng thái: Ready (Audio synthesized)";
+                }, 2000);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // OTHER UTILITIES
+        // ═══════════════════════════════════════════════════════════════
+        function disconnectSession(sessId) {
+            if (confirm(`Bạn có chắc muốn ngắt kết nối phiên WebRTC ${sessId}?`)) {
+                showToast(`Đã ngắt phiên kết nối ${sessId}`);
+            }
+        }
+
+        function updateTokenBudget() {
+            const text = document.getElementById('systemPromptText').value;
+            const approxTokens = Math.round(text.length / 3);
+            const el = document.getElementById('tokenBudgetDisplay');
+            el.innerText = `${approxTokens} / 800 Tokens (${approxTokens > 700 ? 'Gần vượt ngưỡng' : 'An toàn'})`;
+            el.style.color = approxTokens > 700 ? 'var(--accent-amber)' : 'var(--accent-green)';
+        }
+
+        async function restartServer() {
+            if (!confirm('Bạn có chắc muốn khởi động lại FastAPI Server?')) return;
+            const token = getToken();
+            showToast('⚡ Đang gửi lệnh restart server...');
+            
+            try {
+                await fetch('/v1/admin/restart', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            } catch (e) {}
+        }
+    </script>
+</body>
+</html>

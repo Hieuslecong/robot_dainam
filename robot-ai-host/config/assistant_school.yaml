@@ -34,10 +34,9 @@ prohibited_claims:
 
 # Response limits — hard overflow ceiling (ResponsePolicyProcessor); everyday
 # brevity is steered by the prompt, storytelling stays legal under this cap.
-response_max_sentences: 8
+response_max_sentences: 5
 response_max_words: 150
-conversation_max_turns: 10
-
+conversation_max_turns: 8
+llm_max_tokens: 512
 # LLM generation config (0.7: văn tự nhiên đa dạng hơn, vẫn bám sự thật)
 llm_temperature: 0.7
-llm_max_tokens: 160

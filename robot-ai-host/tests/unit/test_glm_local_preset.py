@@ -46,7 +46,7 @@ def test_run_script_checks_endpoint_before_starting_host():
 
 def test_local_test_orchestrator_and_prompt_are_present():
     orchestrator = (ROOT / "scripts" / "test_glm_local_project.sh").read_text(encoding="utf-8")
-    prompt = (ROOT / "PROMPT_TEST_GLM_LOCAL.md").read_text(encoding="utf-8")
+    prompt = (ROOT / "docs" / "reports" / "PROMPT_TEST_GLM_LOCAL.md").read_text(encoding="utf-8")
     assert "scripts/check_llm_endpoint.py" in orchestrator
     assert "npm run build" in orchestrator
     assert "http://127.0.0.1:20128/v1" in prompt

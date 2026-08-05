@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mây Mây — Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f0f1a;color:#e0e0e0;min-height:100vh}
+header{background:#1a1a2e;padding:16px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #2a2a4a}
+header h1{font-size:22px;color:#c4b5fd}
+header .status{font-size:13px;padding:4px 10px;border-radius:12px;background:#1e3a1e;color:#4ade80}
+header .status.off{background:#3a1e1e;color:#f87171}
+nav{display:flex;gap:2px;background:#16162a;padding:0 24px;border-bottom:1px solid #2a2a4a}
+nav button{padding:12px 24px;background:none;border:none;color:#888;cursor:pointer;font-size:14px;border-bottom:2px solid transparent;transition:.2s}
+nav button:hover{color:#c4b5fd}
+nav button.active{color:#c4b5fd;border-bottom-color:#7c3aed}
+main{padding:24px;max-width:900px;margin:0 auto}
+.tab{display:none}
+.tab.active{display:block}
+.card{background:#1a1a2e;border-radius:12px;padding:20px;margin-bottom:16px;border:1px solid #2a2a4a}
+.card h2{font-size:16px;margin-bottom:16px;color:#a78bfa}
+.row{display:flex;gap:16px;align-items:center;margin-bottom:12px}
+.row label{width:140px;font-size:13px;color:#888;flex-shrink:0}
+.row input,.row select{flex:1;padding:8px 12px;background:#0f0f1a;border:1px solid #3a3a5a;border-radius:8px;color:#e0e0e0;font-size:14px}
+.row input:focus,.row select:focus{outline:none;border-color:#7c3aed}
+.row input[type=range]{padding:0}
+.row .val{width:50px;text-align:right;font-size:13px;color:#888}
+.btn{padding:8px 20px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:.2s}
+.btn.primary{background:#7c3aed;color:#fff}
+.btn.primary:hover{background:#6d28d9}
+.btn.danger{background:#dc2626;color:#fff}
+.btn.danger:hover{background:#b91c1c}
+.btn.small{padding:4px 12px;font-size:12px}
+.actions{margin-top:16px;display:flex;gap:8px}
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 24px;border-radius:8px;font-size:14px;animation:in .3s ease;z-index:99}
+.toast.ok{background:#166534;color:#4ade80}
+.toast.err{background:#7f1d1d;color:#fca5a5}
+@keyframes in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.file-list{max-height:200px;overflow-y:auto}
+.file-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2a4a}
+.file-row:last-child{border-bottom:none}
+.file-row .name{font-size:14px}
+.file-row .size{font-size:12px;color:#666}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid #7c3aed;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>☁️ Mây Mây Dashboard</h1>
+  <span id="svcStatus" class="status">🔍 Kiểm tra...</span>
+</header>
+<nav>
+  <button class="active" data-tab="voice">🎤 Giọng nói</button>
+  <button data-tab="llm">🧠 Model</button>
+  <button data-tab="stt">🎧 Nhận dạng</button>
+  <button data-tab="knowledge">📚 Kiến thức</button>
+  <button data-tab="system">⚙️ Hệ thống</button>
+  <button data-tab="connect">📞 Kết nối</button>
+</nav>
+<main id="main"></main>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+// ── State ──────────────────────────────────────────────────
+let settings = {};
+let voices = [];
+
+// ── API helpers ────────────────────────────────────────────
+async function api(method, path, body) {
+  const h = {'Content-Type':'application/json'};
+  if (window._adminToken) h['Authorization'] = 'Bearer ' + window._adminToken;
+  const r = await fetch(path, {method,headers:h,body:body?JSON.stringify(body):undefined});
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+}
+
+async function registerDevice() {
+  try {
+    const r = await fetch('/v1/devices/register', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({provisioning_secret:'dev-provisioning-secret',device_id:'admin-dashboard',device_name:'Dashboard',device_type:'browser'})
+    });
+    const d = await r.json();
+    window._adminToken = d.access_token;
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────
+function toast(msg, ok=true) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (ok?'ok':'err');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ── Build UI ───────────────────────────────────────────────
+function buildVoiceTab() {
+  const s = settings.TTS || {};
+  return `<div class="tab active" id="tab-voice">
+    <div class="card"><h2>Giọng nói (TTS)</h2>
+      <div class="row"><label>Giọng</label>
+        <select id="cfg-VIENEU_VOICE">${voices.map(v => `<option value="${v}" ${s.VIENEU_VOICE?.value===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="row"><label>Tốc độ</label><input type="range" id="cfg-VIENEU_SPEED" min="0.8" max="2.0" step="0.02" value="${s.VIENEU_SPEED?.value||'1.08'}"><span class="val" id="val-VIENEU_SPEED">${s.VIENEU_SPEED?.value||1.08}</span></div>
+      <div class="row"><label>Phong cách</label><select id="cfg-VIENEU_STYLE"><option value="cheerful" ${s.VIENEU_STYLE?.value==='cheerful'?'selected':''}>Vui tươi</option><option value="neutral" ${s.VIENEU_STYLE?.value==='neutral'?'selected':''}>Trung tính</option><option value="sad" ${s.VIENEU_STYLE?.value==='sad'?'selected':''}>Buồn</option><option value="angry" ${s.VIENEU_STYLE?.value==='angry'?'selected':''}>Nghiêm túc</option></select></div>
+      <div class="row"><label>Nhiệt độ</label><input type="range" id="cfg-VIENEU_TEMPERATURE" min="0.1" max="2.0" step="0.1" value="${s.VIENEU_TEMPERATURE?.value||'0.8'}"><span class="val" id="val-VIENEU_TEMPERATURE">${s.VIENEU_TEMPERATURE?.value||0.8}</span></div>
+    </div>
+  </div>`;
+}
+
+function buildLLMTab() {
+  const s = settings.LLM || {};
+  return `<div class="tab" id="tab-llm">
+    <div class="card"><h2>Model (LLM)</h2>
+      <div class="row"><label>Model</label><input id="cfg-LLM_MODEL" value="${s.LLM_MODEL?.value||''}"></div>
+<div class="row"><label>Base URL</label><input id="cfg-LLM_BASE_URL" value="${s.LLM_BASE_URL?.value||''}"></div>
+<div class="row"><label>API Key</label><input type="password" id="cfg-LLM_API_KEY" value="${s.LLM_API_KEY?.value||''}" placeholder="sk-..."></div>
+<div class="row"><label>TTS Temperature</label><input type="number" step="0.1" min="0" max="2" id="cfg-VIENEU_TEMPERATURE" value="${s.VIENEU_TEMPERATURE?.value||'0.7'}"></div>
+<div class="actions"><button class="btn primary" onclick="saveGroup('TTS')">💾 Lưu TTS</button></div>
+<div class="row"><label>Max Tokens</label><input type="number" id="cfg-LLM_MAX_TOKENS" value="${s.LLM_MAX_TOKENS?.value||'2048'}"></div>
+<div class="row"><label>Memory Turns</label><input type="number" id="cfg-MAX_MEMORY_TURNS" value="${s.MAX_MEMORY_TURNS?.value||'10'}"></div>
+<div class="row"><label>System Prompt</label><textarea id="cfg-LLM_SYSTEM_PROMPT" rows="3" style="width:100%;resize:vertical">${s.LLM_SYSTEM_PROMPT?.value||''}</textarea></div>
+      <div class="row"><label>API Key</label><input type="password" id="cfg-LLM_API_KEY" value="${s.LLM_API_KEY?.value||''}"></div>
+      <div class="row"><label>Base URL</label><input id="cfg-LLM_BASE_URL" value="${s.LLM_BASE_URL?.value||''}"></div>
+      <div class="row"><label>Temperature</label><input type="range" id="cfg-LLM_TEMPERATURE" min="0.1" max="2.0" step="0.05" value="${s.LLM_TEMPERATURE?.value||'0.2'}"><span class="val" id="val-LLM_TEMPERATURE">${s.LLM_TEMPERATURE?.value||0.2}</span></div>
+      <div class="row"><label>Max Tokens</label><input type="number" id="cfg-LLM_MAX_TOKENS" min="10" max="8000" value="${s.LLM_MAX_TOKENS?.value||'100'}"></div>
+      <div class="actions"><button class="btn primary" onclick="saveGroup('LLM')">💾 Lưu LLM</button></div>
+    </div>
+  </div>`;
+}
+
+function buildSTTTab() {
+  const s = settings.STT || {};
+  return `<div class="tab" id="tab-stt">
+    <div class="card"><h2>Nhận dạng giọng nói (STT)</h2>
+      <div class="row"><label>STT Model</label><input id="cfg-STT_MODEL" value="${s.STT_MODEL?.value||''}"></div>
+      <div class="row"><label>STT Language</label><input id="cfg-STT_LANGUAGE" value="${s.STT_LANGUAGE?.value||'vi'}"></div>
+      <div class="row"><label>STT Candidate</label><input id="cfg-STT_CANDIDATE" value="${s.STT_CANDIDATE?.value||''}"></div>
+      <div class="row"><label>Initial Greeting</label><textarea id="cfg-INITIAL_GREETING" rows="2" style="width:100%;resize:vertical">${s.INITIAL_GREETING?.value||''}</textarea></div>
+      <div class="actions"><button class="btn primary" onclick="saveGroup('STT')">💾 Lưu STT</button></div>
+    </div>
+  </div>`;
+}
+
+function buildKnowledgeTab() {
+  return `<div class="tab" id="tab-knowledge">
+    <div class="card"><h2>Tải lên file kiến thức</h2>
+      <div class="row"><label>Chọn file</label><input type="file" id="kfile" accept=".yaml,.yml,.txt,.md"></div>
+      <div class="actions"><button class="btn primary" onclick="uploadKnowledge()">📤 Upload</button></div>
+    </div>
+    <div class="card"><h2>File hiện có</h2>
+      <div class="file-list" id="klist"><span class="spin"></span> Đang tải...</div>
+    </div>
+  </div>`;
+}
+
+function buildSystemTab() {
+  const s = settings.SYSTEM || {};
+  return `<div class="tab" id="tab-system">
+    <div class="card"><h2>Cấu hình hệ thống</h2>
+      <div class="row"><label>Max Sessions</label><input type="number" id="cfg-MAX_SESSIONS" value="${s.MAX_SESSIONS?.value||'4'}"></div>
+      <div class="row"><label>Local STT Max</label><input type="number" id="cfg-LOCAL_STT_MAX_SESSIONS" value="${s.LOCAL_STT_MAX_SESSIONS?.value||'2'}"></div>
+      <div class="row"><label>Heartbeat Timeout (s)</label><input type="number" id="cfg-HEARTBEAT_TIMEOUT_SECONDS" value="${s.HEARTBEAT_TIMEOUT_SECONDS?.value||'600'}"></div>
+      <div class="row"><label>Barge-in</label><select id="cfg-ENABLE_BARGE_IN"><option value="true" ${s.ENABLE_BARGE_IN?.value==='true'?'selected':''}>ON</option><option value="false" ${s.ENABLE_BARGE_IN?.value!=='true'?'selected':''}>OFF</option></select></div>
+      <div class="row"><label>Voice Activity Detection</label><select id="cfg-ENABLE_VAD"><option value="true" ${s.ENABLE_VAD?.value==='true'?'selected':''}>ON</option><option value="false" ${s.ENABLE_VAD?.value!=='true'?'selected':''}>OFF</option></select></div>
+      <div class="row"><label>Turn Analysis</label><select id="cfg-TURN_ANALYSIS"><option value="true" ${s.TURN_ANALYSIS?.value==='true'?'selected':''}>ON</option><option value="false" ${s.TURN_ANALYSIS?.value!=='true'?'selected':''}>OFF</option></select></div>
+      <div class="actions">
+        <button class="btn primary" onclick="saveGroup('SYSTEM')">💾 Lưu hệ thống</button>
+        <button class="btn danger" onclick="restartServer()">🔄 Restart Server</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildConnectTab() {
+  return `<div class="tab" id="tab-connect">
+    <div class="card"><h2>Kết nối thoại</h2>
+      <p style="color:#888;margin-bottom:16px">Mở trang chat voice để nói chuyện với Mây Mây.</p>
+      <div class="actions">
+        <a href="/client/chat/" class="btn primary" style="text-decoration:none">💬 Mở Voice Chat</a>
+        <a href="/robot/" class="btn" style="background:#2a2a4a;color:#a78bfa;text-decoration:none">🤖 Mở Robot Face</a>
+      </div>
+    </div>
+  </div>`;
+}
+
+function render() {
+  $('#main').innerHTML = buildVoiceTab() + buildLLMTab() + buildSTTTab() + buildKnowledgeTab() + buildSystemTab() + buildConnectTab();
+  // Wire range sliders
+  ['VIENEU_SPEED','VIENEU_TEMPERATURE','LLM_TEMPERATURE'].forEach(k => {
+    const el = $('#cfg-'+k);
+    if (el) el.addEventListener('input', () => $('#val-'+k).textContent = el.value);
+  });
+}
+
+// ── Save ───────────────────────────────────────────────────
+window.saveGroup = async function(group) {
+  const keys = {TTS:['VIENEU_VOICE','VIENEU_SPEED','VIENEU_STYLE','VIENEU_TEMPERATURE'],LLM:['LLM_MODEL','LLM_API_KEY','LLM_BASE_URL','LLM_TEMPERATURE','LLM_MAX_TOKENS'],STT:['STT_CANDIDATE'],SYSTEM:['MAX_SESSIONS','LOCAL_STT_MAX_SESSIONS','HEARTBEAT_TIMEOUT_SECONDS']}[group];
+  if (!keys) return;
+  const body = {[group]:{}};
+  keys.forEach(k => { const v = $('#cfg-'+k)?.value; if (v!==undefined) body[group][k]=v; });
+  try {
+    await api('PUT','/v1/admin/settings',body);
+    toast('✅ Đã lưu ' + group);
+  } catch(e) {
+    toast('❌ Lỗi: '+e.message, false);
+  }
+};
+
+// ── Knowledge ──────────────────────────────────────────────
+window.uploadKnowledge = async function() {
+  const f = $('#kfile')?.files?.[0];
+  if (!f) return toast('Chọn file trước', false);
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const h = {};
+    if (window._adminToken) h['Authorization'] = 'Bearer ' + window._adminToken;
+    const r = await fetch('/v1/admin/knowledge/upload', {method:'POST',headers:h,body:fd});
+    if (!r.ok) throw new Error((await r.json()).detail);
+    toast('✅ Đã upload: ' + f.name);
+    loadKnowledge();
+  } catch(e) {
+    toast('❌ '+e.message, false);
+  }
+};
+
+async function deleteKnowledge(name) {
+  try {
+    await api('DELETE','/v1/admin/knowledge/'+encodeURIComponent(name));
+    toast('✅ Đã xóa');
+    loadKnowledge();
+  } catch(e) { toast('❌ '+e.message, false); }
+}
+
+async function loadKnowledge() {
+  try {
+    const d = await api('GET','/v1/admin/knowledge');
+    const el = $('#klist');
+    if (!el) return;
+    if (!d.files.length) { el.innerHTML = '<span style="color:#666">Chưa có file nào</span>'; return; }
+    el.innerHTML = d.files.map(f =>
+      `<div class="file-row"><span class="name">📄 ${f.name}</span><span class="size">${(f.size/1024).toFixed(1)} KB</span><button class="btn danger small" onclick="deleteKnowledge('${f.name}')">Xóa</button></div>`
+    ).join('');
+  } catch(e) { /* ignore */ }
+}
+
+// ── Restart ────────────────────────────────────────────────
+window.restartServer = async function() {
+  if (!confirm('Server sẽ khởi động lại. Tiếp tục?')) return;
+  try {
+    await api('POST','/v1/admin/restart');
+    toast('🔄 Server đang restart...');
+    setTimeout(() => location.reload(), 3000);
+  } catch(e) { toast('❌ '+e.message, false); }
+};
+
+// ── Tabs ───────────────────────────────────────────────────
+$$('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tid = btn.dataset.tab;
+    $$('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-'+tid));
+  });
+});
+
+// ── Init ───────────────────────────────────────────────────
+async function init() {
+  // Register
+  const ok = await registerDevice();
+  $('#svcStatus').textContent = ok ? '✅ Online' : '❌ Offline';
+  $('#svcStatus').className = 'status' + (ok?'':' off');
+  if (!ok) { $('#main').innerHTML = '<p style="color:#f87171">Không kết nối được server</p>'; return; }
+
+  // Load settings
+  try {
+    settings = await api('GET','/v1/admin/settings');
+  } catch(e) {
+    toast('⚠️ Không load được settings', false);
+  }
+
+  // Load voices
+  try {
+    voices = (await api('GET','/v1/admin/voices')).voices || [];
+  } catch(e) {}
+
+  render();
+  loadKnowledge();
+}
+
+init();
+
+// ── LLM Model Quick Check ──
+async function testLLM() {
+  const btn = document.getElementById('llm-test-btn');
+  const dot = document.getElementById('llm-status-dot');
+  const statusText = document.getElementById('llm-status-text');
+  const resultDiv = document.getElementById('llm-test-result');
+  const latencyDiv = document.getElementById('llm-latency');
+  
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang kiểm tra...';
+  btn.style.background = '#495057';
+  dot.style.background = '#fab005';
+  statusText.textContent = 'Đang kiểm tra...';
+  statusText.style.color = '#fab005';
+  resultDiv.textContent = '';
+  latencyDiv.textContent = '';
+  
+  const start = performance.now();
+  try {
+    const resp = await fetch('/api/model/test');
+    const elapsed = ((performance.now() - start) / 1000).toFixed(2);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    const data = await resp.json();
+    dot.style.background = '#40c057';
+    statusText.textContent = 'Hoạt động ✓';
+    statusText.style.color = '#40c057';
+    resultDiv.innerHTML = `<pre style="margin:4px 0;color:#69db7c;white-space:pre-wrap">${escapeHtml(data.response || JSON.stringify(data, null, 2))}</pre>`;
+    latencyDiv.textContent = `⏱ Phản hồi: ${elapsed}s`;
+    latencyDiv.style.color = '#69db7c';
+  } catch (err) {
+    dot.style.background = '#fa5252';
+    statusText.textContent = 'Lỗi ✗';
+    statusText.style.color = '#fa5252';
+    resultDiv.innerHTML = `<span style="color:#fa5252">${escapeHtml(err.message)}</span>`;
+    latencyDiv.textContent = `⏱ Timeout/fail sau ${((performance.now() - start) / 1000).toFixed(1)}s`;
+    latencyDiv.style.color = '#fa5252';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Kiểm tra LLM';
+    btn.style.background = '#339af0';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Auto-load model name
+(async function loadModelInfo() {
+  try {
+    const resp = await fetch('/api/config');
+    if (resp.ok) {
+      const data = await resp.json();
+      document.getElementById('llm-model-name').textContent =
+        data?.llm?.model || data?.model || 'unknown';
+    }
+  } catch (e) {
+    document.getElementById('llm-model-name').textContent = 'Không tải được';
+  }
+})();
+</script>
+</body>
+</html>

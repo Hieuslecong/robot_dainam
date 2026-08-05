@@ -35,7 +35,13 @@ def _build_recognizer(model_repo: str):
     import sherpa_onnx
     from huggingface_hub import snapshot_download
 
-    snap = Path(snapshot_download(model_repo))
+    try:
+        # Prefer using local cached files to prevent unauthenticated HTTP warnings
+        snap_path = snapshot_download(model_repo, local_files_only=True)
+    except Exception:
+        snap_path = snapshot_download(model_repo)
+
+    snap = Path(snap_path)
     return sherpa_onnx.OfflineRecognizer.from_transducer(
         tokens=str(next(snap.rglob("tokens.txt"))),
         encoder=str(next(snap.rglob("encoder*.onnx"))),
@@ -43,6 +49,7 @@ def _build_recognizer(model_repo: str):
         joiner=str(next(snap.rglob("joiner*.onnx"))),
         num_threads=2,
     )
+
 
 
 class SherpaSTTService(SegmentedSTTService):

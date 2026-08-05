@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import platform
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -12,6 +15,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 # Single configuration source of truth. The legacy ``configs/`` directory was
@@ -85,6 +89,31 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     default_profile: str = "mock"
     cors_origins: str = "http://127.0.0.1:8000,http://localhost:8000"
+    # WebRTC ICE servers (STUN/TURN) for NAT traversal.
+    # Comma-separated list of "stun:host:port" or "turn:host:port?transport=udp".
+    # The turn URL may include "?credential=..." — Pydantic will preserve it.
+    # Default: Google's free STUN servers.
+    webrtc_ice_servers: str = (
+        "stun:stun.l.google.com:19302,"
+        "stun:stun1.l.google.com:19302"
+    )
+
+    # Cloudflare TURN credentials (per-session short-lived).
+    # Obtain KEY_ID and API_TOKEN from Cloudflare Dashboard → Turn.
+    # Leave empty to fall back to static webrtc_ice_servers.
+    cloudflare_turn_key_id: str = ""
+    cloudflare_turn_api_token: str = ""
+    cloudflare_turn_ttl_seconds: int = 3600
+
+    # ICE policy: "all" (default) or "relay" (force TURN, testing only).
+    webrtc_ice_policy: str = "all"
+    webrtc_force_relay: bool = False
+
+    # Toggle individual transport modes.
+    webrtc_enable_stun: bool = True
+    webrtc_enable_turn_udp: bool = True
+    webrtc_enable_turn_tcp: bool = True
+    webrtc_enable_turn_tls: bool = True
 
     # Mock test harness.
     mock_auto_transcribe: bool = True
@@ -106,7 +135,7 @@ class Settings(BaseSettings):
     # Spec 9.6: conversation temperature 0.45–0.6. Router/planner get their own
     # values when adaptive routing lands (Phase 3).
     llm_temperature: float = 0.5
-    llm_max_tokens: int = 160
+    llm_max_tokens: int = 100
     llm_stream: bool = True
     llm_runtime_hint: str = "unknown"
     # Spec 9.1 optional role models; empty falls back to LLM_MODEL.
@@ -121,8 +150,8 @@ class Settings(BaseSettings):
     persona_name: str = "Trợ lý AI của trường"
     # Hard overflow ceiling per response (everyday brevity comes from the
     # prompt; long-form like storytelling stays legal under this cap).
-    response_max_sentences: int = 8
-    response_max_words: int = 150
+    response_max_sentences: int = 5
+    response_max_words: int = 100
     # Spec 13.1: keep the last 6–8 turns verbatim; older turns are summarized.
     conversation_max_turns: int = 8
 
@@ -204,9 +233,24 @@ class Settings(BaseSettings):
     # Observability.
     metrics_jsonl_path: str = "artifacts/runtime-metrics.jsonl"
 
+    # Memory (PR-1): off by default for public robots. Requires consent + identity.
+    persistent_user_memory: bool = False
+
+    # WebSocket RTVI transport (PR-4): feature-flagged, default disabled.
+    websocket_rtvi_enabled: bool = False
+
+    # Runtime: set by start.sh when tunnel is active (avoids wildcard CORS).
+    tunnel_url: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
-        return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        origins = [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        # Auto-append tunnel URL if provided by start.sh
+        if self.tunnel_url:
+            tunnel_origin = self.tunnel_url.rstrip("/")
+            if tunnel_origin not in origins:
+                origins.append(tunnel_origin)
+        return origins
 
     @property
     def scripted_transcripts(self) -> list[str]:
@@ -247,6 +291,36 @@ class Settings(BaseSettings):
         if platform.system() == "Darwin" and platform.machine() == "arm64":
             return "mlx"
         return "faster-whisper"
+
+    @property
+    def resolved_whisper_device(self) -> str:
+        if self.whisper_device != "auto":
+            return self.whisper_device
+        if platform.system() == "Darwin":
+            return "cpu"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+        except ImportError:
+            import subprocess
+            try:
+                res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if res.returncode == 0:
+                    return "cuda"
+            except Exception:
+                pass
+        return "cpu"
+
+    @property
+    def resolved_whisper_compute_type(self) -> str:
+        if self.whisper_compute_type != "default":
+            return self.whisper_compute_type
+        device = self.resolved_whisper_device
+        if device == "cuda":
+            return "float16"
+        return "int8"
+
 
 
 @lru_cache

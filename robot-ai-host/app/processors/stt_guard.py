@@ -78,17 +78,20 @@ class STTGuard(FrameProcessor):
             self._logger.debug(f"STT dropped (too short): {text!r}")
             return False
 
-        # Don't process while bot is speaking (echo prevention)
-        if self._bot_speaking:
-            self._logger.debug(f"STT dropped (bot speaking): {text!r}")
+        # PR-3.6: Don't blanket-drop transcripts just because bot is speaking.
+        # User interjections during bot speech are valid barge-in.
+        # Echo prevention uses hash-based dedup (below), not the bot_speaking flag.
+        # Only drop if it's an interim, not a final, during bot speech (echo risk).
+        if self._bot_speaking and not is_final:
+            self._logger.debug(f"STT dropped (interim during bot speech): {text!r}")
             return False
 
-        # Check speech duration minimum
+        # Check speech duration minimum (for final transcripts)
         if self._speech_start is not None:
             duration_ms = (time.monotonic() - self._speech_start) * 1000
             if is_final and duration_ms < self._min_speech_ms:
                 self._logger.debug(
-                    f"STT dropped (too short speech {duration_ms:.0f}ms): {text!r}"
+                    f"STT dropped (too short speech {duration_ms:.0f}ms < {self._min_speech_ms}ms): {text!r}"
                 )
                 return False
 
