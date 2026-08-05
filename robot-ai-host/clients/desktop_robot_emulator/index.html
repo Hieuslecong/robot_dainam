@@ -38,17 +38,29 @@
         <p id="lastText" class="last-text"></p>
       </div>
 
-      <!-- Hidden controls (auto-filled) -->
-      <input id="serverUrl" type="hidden" />
-      <input id="deviceId" type="hidden" />
-      <input id="provisioningSecret" type="hidden" value="dev-provisioning-secret" />
-      <input id="profile" type="hidden" value="hybrid_local_vi" />
-      <button id="connect" style="display:none">Kết nối</button>
-      <button id="disconnect" style="display:none">Ngắt</button>
-      <button id="wake" style="display:none">Đánh thức</button>
-      <button id="sleep" style="display:none">Ngủ</button>
-      <select id="profileSelect" style="display:none"><option value="hybrid_local_vi" selected></option></select>
-      <p id="status" style="display:none"></p>
+      <!-- Settings gear (shown after connect) -->
+      <button id="gearToggle" class="gear" title="Cài đặt" hidden>⚙️</button>
+
+      <!-- Controls -->
+      <section class="panel" id="controls">
+        <label>Host server <input id="serverUrl" value="" /></label>
+        <label>Device ID <input id="deviceId" value="robot-face-001" maxlength="128" /></label>
+        <label>Provisioning secret <input id="provisioningSecret" type="password" value="dev-provisioning-secret" /></label>
+        <label>Profile
+          <select id="profile">
+            <option value="hybrid_local_vi">hybrid_local_vi</option>
+            <option value="mock">mock</option>
+            <option value="google_vi">google_vi</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button id="connect" class="primary">Kết nối</button>
+          <button id="disconnect" disabled>Ngắt</button>
+          <button id="wake" disabled>Đánh thức</button>
+          <button id="sleep" disabled>Ngủ</button>
+        </div>
+        <p id="status" class="muted">Sẵn sàng.</p>
+      </section>
 
       <audio id="botAudio" autoplay playsinline></audio>
     </main>
