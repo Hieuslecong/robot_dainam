@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Pipecat Robot AI Host browser device emulator" />
+    <title>Robot AI Host — Thiết bị giả lập</title>
+    <script type="module" crossorigin src="/client/assets/index-Db3YPao6.js"></script>
+    <link rel="stylesheet" crossorigin href="/client/assets/index-Dz1-h0UF.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">PIPECAT ROBOT AI HOST</p>
+          <h1>Thiết bị giọng nói giả lập</h1>
+          <p class="lede">Dùng microphone và loa của máy tính qua Pipecat Client SDK + SmallWebRTC.</p>
+        </div>
+        <div id="connectionBadge" class="badge" data-state="disconnected">disconnected</div>
+      </header>
+
+      <section class="panel setup-grid" aria-labelledby="setupTitle">
+        <div>
+          <h2 id="setupTitle">Thiết lập phiên</h2>
+          <label>Host server
+            <input id="serverUrl" value="" autocomplete="url" />
+          </label>
+          <label>Device ID
+            <input id="deviceId" value="desktop-001" maxlength="128" />
+          </label>
+          <label>Provisioning secret
+            <input id="provisioningSecret" type="password" value="dev-provisioning-secret" />
+          </label>
+          <label>Profile
+            <select id="profile">
+              <option value="hybrid_local_vi">hybrid_local_vi — Whisper + GLM + Piper (local)</option>
+              <option value="mock">mock — transport/pipeline tone test</option>
+              <option value="google_vi">google_vi — STT/TTS tiếng Việt thật</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="initDevices" class="secondary">Kiểm tra microphone</button>
+          <button id="connect" class="primary">Kết nối</button>
+          <button id="disconnect" class="danger" disabled>Ngắt kết nối</button>
+          <button id="toggleMic" class="secondary" disabled>Tắt microphone</button>
+          <button id="stopLocalPlayback" class="ghost" disabled>Dừng loa cục bộ (debug)</button>
+          <p class="warning"><strong>Lưu ý:</strong> nút dừng loa cục bộ không phải barge-in. Barge-in thật được kiểm tra bằng cách nói vào mic khi bot đang nói.</p>
+        </div>
+      </section>
+
+      <section class="panel device-grid">
+        <div>
+          <h2>Thiết bị âm thanh</h2>
+          <label>Microphone
+            <select id="micSelect"><option>Chưa khởi tạo</option></select>
+          </label>
+          <div class="meter" aria-label="Mức microphone"><span id="micLevel"></span></div>
+          <p id="micStatus" class="muted">Chưa cấp quyền microphone.</p>
+        </div>
+        <div>
+          <h2>Trạng thái realtime</h2>
+          <dl class="status-list">
+            <div><dt>Session</dt><dd id="sessionId">—</dd></div>
+            <div><dt>Transport</dt><dd id="transportState">disconnected</dd></div>
+            <div><dt>Bot</dt><dd id="botState">idle</dd></div>
+            <div><dt>User</dt><dd id="userState">idle</dd></div>
+            <div><dt>Audio output</dt><dd id="audioState">inactive</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="panel conversation">
+        <div class="section-head">
+          <h2>Hội thoại</h2>
+          <button id="clearTranscript" class="ghost">Xóa hiển thị</button>
+        </div>
+        <div id="transcript" class="transcript" aria-live="polite"></div>
+      </section>
+
+      <section class="grid-two">
+        <article class="panel">
+          <h2>Behavior robot</h2>
+          <div id="behavior" class="event-log"></div>
+        </article>
+        <article class="panel">
+          <h2>Metrics</h2>
+          <pre id="metrics" class="metrics">Chưa có dữ liệu.</pre>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><h2>Nhật ký</h2><button id="clearLog" class="ghost">Xóa log</button></div>
+        <pre id="log" class="log"></pre>
+      </section>
+
+      <audio id="botAudio" autoplay playsinline></audio>
+    </main>
+  </body>
+</html>
